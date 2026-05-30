@@ -1,7 +1,7 @@
 ﻿{
-    "version":  "0.1.0",
-    "zipUrl":  "https://github.com/namururu/usbtool/releases/latest/download/portable-codex-usb.zip",
-    "sha256":  "",
-    "notes":  "Initial portable GUI update channel.",
-    "manifestUrl":  "https://github.com/namururu/usbtool/releases/latest/download/update.json"
+    "version": "0.1.0",
+    "zipUrl": "https://github.com/namururu/usbtool/releases/download/auto-latest/portable-codex-usb.zip",
+    "sha256": "",
+    "notes": "Auto update channel.",
+    "manifestUrl": "https://github.com/namururu/usbtool/releases/download/auto-latest/update.json"
 }

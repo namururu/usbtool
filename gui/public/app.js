@@ -2,6 +2,7 @@ const el = {
   codexState: document.querySelector("#codexState"),
   codexHome: document.querySelector("#codexHome"),
   rootPath: document.querySelector("#rootPath"),
+  updateState: document.querySelector("#updateState"),
   history: document.querySelector("#history"),
   workspace: document.querySelector("#workspace"),
   model: document.querySelector("#model"),
@@ -283,6 +284,9 @@ async function refreshStatus() {
   el.codexState.className = status.codexInstalled ? "ok" : "bad";
   el.codexHome.textContent = status.codexHome;
   el.rootPath.textContent = status.root;
+  el.updateState.textContent = status.updateStatus
+    ? `${status.updateStatus.status}: ${status.updateStatus.message}`
+    : "未確認";
   if (!el.workspace.value) el.workspace.value = status.workspaceRoot;
   latestImageMtime = status.generatedImages?.[0]?.mtimeMs || 0;
   statusCache = status;

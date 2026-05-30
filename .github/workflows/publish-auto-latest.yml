@@ -1,0 +1,35 @@
+name: Publish auto-latest update
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build update package
+        shell: pwsh
+        env:
+          PORTABLE_CODEX_RELEASE_TAG: auto-latest
+        run: .\Build-UpdateZip.ps1 -WriteManifest
+
+      - name: Publish release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "auto-latest"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "auto-latest" --notes "Automatically updated from main."
+          }
+          gh release upload $tag .\dist\portable-codex-usb.zip .\dist\update.json --clobber

@@ -20,6 +20,7 @@ const npmPrefix = path.join(root, "tools", "npm-global");
 const npmCache = path.join(root, "tools", "npm-cache");
 const historyFile = path.join(dataDir, "gui-history.json");
 const stateFile = path.join(dataDir, "gui-state.json");
+const updateStatusFile = path.join(dataDir, "update-status.json");
 
 const args = process.argv.slice(2);
 const portArgIndex = args.indexOf("--port");
@@ -464,6 +465,7 @@ const server = http.createServer(async (req, res) => {
         generatedImages: listGeneratedImages(),
         history: loadHistory(),
         state: loadState(),
+        updateStatus: loadJson(updateStatusFile, null),
       });
       return;
     }

@@ -11,6 +11,8 @@ $DataDir = Join-Path $Root "data"
 $TmpDir = Join-Path $Root ".tmp\self-update"
 $LocalVersionFile = Join-Path $Root "VERSION"
 $DefaultManifestFile = Join-Path $Root "update.json"
+$UpdateStateFile = Join-Path $DataDir "update-state.json"
+$UpdateStatusFile = Join-Path $DataDir "update-status.json"
 
 function Write-Info {
     param([string]$Message)
@@ -27,6 +29,46 @@ function Get-VersionValue {
     catch {
         return [version]"0.0.0"
     }
+}
+
+function Read-JsonFile {
+    param(
+        [string]$Path,
+        [object]$Fallback
+    )
+    try {
+        if (Test-Path $Path) {
+            return Get-Content $Path -Raw | ConvertFrom-Json
+        }
+    }
+    catch {
+        return $Fallback
+    }
+    return $Fallback
+}
+
+function Write-JsonFile {
+    param(
+        [string]$Path,
+        [object]$Value
+    )
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
+    $Value | ConvertTo-Json -Depth 8 | Set-Content -Path $Path -Encoding UTF8
+}
+
+function Write-UpdateStatus {
+    param(
+        [string]$Status,
+        [string]$Message,
+        [object]$Manifest = $null
+    )
+    Write-JsonFile -Path $UpdateStatusFile -Value ([ordered]@{
+        checkedAt = (Get-Date).ToString("o")
+        status = $Status
+        message = $Message
+        version = if ($Manifest) { [string]$Manifest.version } else { "" }
+        buildId = if ($Manifest) { [string]$Manifest.buildId } else { "" }
+    })
 }
 
 function Assert-UnderRoot {
@@ -89,15 +131,23 @@ try {
 }
 catch {
     Write-Info "Update check failed: $($_.Exception.Message)"
+    Write-UpdateStatus -Status "check-failed" -Message $_.Exception.Message
     exit 0
 }
 
 $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
 $currentVersion = if (Test-Path $LocalVersionFile) { (Get-Content $LocalVersionFile -Raw).Trim() } else { "0.0.0" }
 $remoteVersion = [string]$manifest.version
+$remoteBuildId = [string]$manifest.buildId
+$localState = Read-JsonFile -Path $UpdateStateFile -Fallback ([pscustomobject]@{})
+$localBuildId = [string]$localState.buildId
 
-if (-not $Force -and (Get-VersionValue $remoteVersion) -le (Get-VersionValue $currentVersion)) {
+$remoteNewerVersion = (Get-VersionValue $remoteVersion) -gt (Get-VersionValue $currentVersion)
+$sameVersionNewBuild = $remoteBuildId -and ($remoteBuildId -ne $localBuildId)
+
+if (-not $Force -and -not $remoteNewerVersion -and -not $sameVersionNewBuild) {
     Write-Info "Portable Codex GUI is up to date ($currentVersion)."
+    Write-UpdateStatus -Status "up-to-date" -Message "Portable Codex GUI is up to date ($currentVersion)." -Manifest $manifest
     exit 0
 }
 
@@ -146,4 +196,17 @@ if ($remoteVersion) {
     Set-Content -Path $LocalVersionFile -Value $remoteVersion -Encoding ASCII
 }
 
-Write-Info "Updated Portable Codex GUI to $remoteVersion."
+Write-JsonFile -Path $UpdateStateFile -Value ([ordered]@{
+    version = $remoteVersion
+    buildId = $remoteBuildId
+    updatedAt = (Get-Date).ToString("o")
+})
+
+$message = if ($remoteBuildId) {
+    "Updated Portable Codex GUI to $remoteVersion ($($remoteBuildId.Substring(0, [Math]::Min(7, $remoteBuildId.Length))))."
+}
+else {
+    "Updated Portable Codex GUI to $remoteVersion."
+}
+Write-Info $message
+Write-UpdateStatus -Status "updated" -Message $message -Manifest $manifest

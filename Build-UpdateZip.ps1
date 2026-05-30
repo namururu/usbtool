@@ -66,11 +66,21 @@ Write-Host "SHA256 $hash"
 
 if ($WriteManifest) {
     $version = (Get-Content (Join-Path $Root "VERSION") -Raw).Trim()
+    $repo = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { "namururu/usbtool" }
+    $buildId = if ($env:GITHUB_SHA) {
+        $env:GITHUB_SHA
+    }
+    else {
+        try { (git -C $Root rev-parse HEAD 2>$null).Trim() } catch { "" }
+    }
+    $releaseTag = if ($env:PORTABLE_CODEX_RELEASE_TAG) { $env:PORTABLE_CODEX_RELEASE_TAG } else { "auto-latest" }
     $manifest = [ordered]@{
         version = $version
-        zipUrl = "https://github.com/YOUR_NAME/portable-codex-usb/releases/latest/download/$PackageName"
+        buildId = $buildId
+        zipUrl = "https://github.com/$repo/releases/download/$releaseTag/$PackageName"
+        manifestUrl = "https://github.com/$repo/releases/download/$releaseTag/update.json"
         sha256 = $hash
-        notes = "Release $version"
+        notes = "Release $version ($buildId)"
     }
     $manifestPath = Join-Path $OutputPath "update.json"
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding UTF8
