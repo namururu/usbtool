@@ -7,6 +7,7 @@ const el = {
   model: document.querySelector("#model"),
   permission: document.querySelector("#permission"),
   bypass: document.querySelector("#bypass"),
+  enterToSend: document.querySelector("#enterToSend"),
   resume: document.querySelector("#resume"),
   japanese: document.querySelector("#japanese"),
   autonomous: document.querySelector("#autonomous"),
@@ -451,7 +452,12 @@ document.addEventListener("paste", (event) => {
   if (files.length) addFiles(files).catch((error) => appendLine(error.message, "error"));
 });
 el.prompt.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) runCodex();
+  const wantsEnterSend = el.enterToSend.checked && !event.shiftKey;
+  const wantsShortcutSend = event.key === "Enter" && (event.ctrlKey || event.metaKey);
+  if (event.key === "Enter" && (wantsEnterSend || wantsShortcutSend)) {
+    event.preventDefault();
+    runCodex();
+  }
 });
 
 refreshStatus().catch((error) => {
