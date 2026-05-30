@@ -148,6 +148,28 @@ Remove everything local except the app and runtime:
 .\Clean-UsbCodex.ps1 -All
 ```
 
+## Build A Clean Carry Folder
+
+For a clean USB copy, do not copy the development folder directly. Build a carry folder:
+
+```powershell
+.\Build-UsbCarry.ps1 -CleanOutput -IncludeRuntime
+```
+
+Output:
+
+```text
+dist\carry\portable-codex-usb
+```
+
+Options:
+
+- `-IncludeRuntime`: include portable Node and npm-installed Codex CLI
+- `-IncludeAuth`: include `data\codex-home` login/session state
+- `-IncludeWorkspaces`: include `workspaces`
+
+Default output excludes `.git`, `dist`, `.tmp`, GUI logs, upload cache, generated images, and local history.
+
 ## Security Notes
 
 If you keep `data/codex-home` on the USB drive, the USB drive may contain login/session material after you sign in. Treat it like a password-bearing device.
