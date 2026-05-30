@@ -349,6 +349,7 @@ function stripCodexNoise(text) {
   let skippingBaseInstruction = false;
   for (const line of lines) {
     const trimmed = line.trim();
+    if (currentRun?.userPromptKey && normalizeVisibleText(trimmed) === currentRun.userPromptKey) continue;
     if (/^0\.\d+\.\d+$/.test(trimmed)) continue;
     if (trimmed === "以後の回答はすべて日本語で返してください。コマンド出力やファイル名などの固有名は必要に応じて原文のまま残してください。") {
       skippingBaseInstruction = true;
@@ -493,6 +494,7 @@ async function runCodex() {
     authNoticeShown: false,
     imageRequested: false,
     imageBaselineMtime: latestImageMtime,
+    userPromptKey: normalizeVisibleText(prompt || "添付を確認してください。"),
     visibleTextKeys: new Set(),
     visibleTextBuffer: [],
   };
