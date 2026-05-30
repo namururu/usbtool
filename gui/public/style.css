@@ -264,6 +264,15 @@ textarea:focus {
   accent-color: var(--accent);
 }
 
+.danger-switch {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.danger-switch input {
+  accent-color: var(--danger);
+}
+
 .actions {
   display: flex;
   gap: 10px;

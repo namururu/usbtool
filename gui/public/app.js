@@ -6,6 +6,7 @@ const el = {
   workspace: document.querySelector("#workspace"),
   model: document.querySelector("#model"),
   permission: document.querySelector("#permission"),
+  bypass: document.querySelector("#bypass"),
   resume: document.querySelector("#resume"),
   japanese: document.querySelector("#japanese"),
   autonomous: document.querySelector("#autonomous"),
@@ -112,6 +113,7 @@ function renderHistory(history) {
     button.addEventListener("click", () => {
       el.workspace.value = item.workspace || el.workspace.value;
       el.permission.value = item.permission || "workspace-write";
+      el.bypass.checked = item.permission === "bypass";
       el.prompt.value = item.prompt || "";
     });
     el.history.append(button);
@@ -230,7 +232,7 @@ async function runCodex() {
   const payload = {
     workspace: el.workspace.value,
     model: el.model.value,
-    permission: el.permission.value,
+    permission: el.bypass.checked ? "bypass" : el.permission.value,
     resume: el.resume.checked,
     japanese: el.japanese.checked,
     autonomous: el.autonomous.checked,
