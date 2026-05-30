@@ -10,6 +10,7 @@ const workspaceRoot = path.join(root, "workspaces");
 const dataDir = path.join(root, "data");
 const codexHome = path.join(dataDir, "codex-home");
 const generatedImagesDir = path.join(codexHome, "generated_images");
+const artifactsDir = path.join(dataDir, "artifacts");
 const uploadsDir = path.join(dataDir, "uploads");
 const codexCmd = path.join(root, "tools", "npm-global", "codex.cmd");
 const codexJs = path.join(root, "tools", "npm-global", "node_modules", "@openai", "codex", "bin", "codex.js");
@@ -28,7 +29,7 @@ const port = portArgIndex >= 0 ? Number(args[portArgIndex + 1]) : Number(process
 const jobs = new Map();
 
 function ensureDirs() {
-  for (const dir of [workspaceRoot, codexHome, npmCache, uploadsDir]) {
+  for (const dir of [workspaceRoot, codexHome, npmCache, uploadsDir, artifactsDir]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 }
@@ -136,35 +137,121 @@ function listWorkspaces() {
     .map((item) => path.join(workspaceRoot, item.name));
 }
 
-function listGeneratedImages() {
-  if (!fs.existsSync(generatedImagesDir)) return [];
-  const allowed = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+const artifactExtensions = new Set([
+  ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg",
+  ".pdf", ".html", ".htm", ".md", ".txt", ".csv", ".json",
+  ".docx", ".xlsx", ".pptx", ".zip", ".ps1",
+]);
+const ignoredArtifactDirs = new Set([".git", "node_modules", ".tmp", "dist", "usb", "tools"]);
 
+function walkFiles(dir, allowedExtensions) {
+  if (!fs.existsSync(dir)) return [];
   function walk(dir) {
     const entries = [];
     for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
       const filePath = path.join(dir, item.name);
       if (item.isDirectory()) {
+        if (ignoredArtifactDirs.has(item.name)) continue;
         entries.push(...walk(filePath));
-      } else if (item.isFile() && allowed.has(path.extname(item.name).toLowerCase())) {
+      } else if (item.isFile() && allowedExtensions.has(path.extname(item.name).toLowerCase())) {
         entries.push(filePath);
       }
     }
     return entries;
   }
+  return walk(dir);
+}
 
-  return walk(generatedImagesDir)
-    .map((filePath) => {
-      const relativeName = path.relative(generatedImagesDir, filePath).replaceAll("\\", "/");
-      const stat = fs.statSync(filePath);
-      return {
-        name: relativeName,
-        url: `/api/generated-images/${relativeName.split("/").map(encodeURIComponent).join("/")}`,
-        size: stat.size,
-        mtimeMs: stat.mtimeMs,
-      };
-    })
+function toListedFile(filePath, baseDir, urlPrefix, sourceLabel) {
+  const relativeName = path.relative(baseDir, filePath).replaceAll("\\", "/");
+  const stat = fs.statSync(filePath);
+  return {
+    name: `${sourceLabel}/${relativeName}`,
+    url: `${urlPrefix}/${relativeName.split("/").map(encodeURIComponent).join("/")}`,
+    path: filePath,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+  };
+}
+
+function listGeneratedImages() {
+  return [
+    ...walkFiles(artifactsDir, imageExtensions)
+      .map((filePath) => toListedFile(filePath, artifactsDir, "/api/artifacts", "artifacts")),
+    ...walkFiles(generatedImagesDir, imageExtensions)
+      .map((filePath) => toListedFile(filePath, generatedImagesDir, "/api/generated-images", "generated_images")),
+  ]
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+function listArtifacts() {
+  return walkFiles(artifactsDir, artifactExtensions)
+    .map((filePath) => toListedFile(filePath, artifactsDir, "/api/artifacts", "artifacts"))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+function snapshotArtifacts(workspace) {
+  const snapshot = new Map();
+  for (const dir of [workspace, generatedImagesDir]) {
+    for (const filePath of walkFiles(dir, artifactExtensions)) {
+      const resolved = path.resolve(filePath);
+      if (resolved.startsWith(path.resolve(artifactsDir))) continue;
+      const stat = fs.statSync(filePath);
+      snapshot.set(resolved.toLowerCase(), `${stat.mtimeMs}:${stat.size}`);
+    }
+  }
+  return snapshot;
+}
+
+function uniqueArtifactPath(targetDir, originalName) {
+  const parsed = path.parse(sanitizeFileName(originalName));
+  let filePath = path.join(targetDir, `${parsed.name}${parsed.ext}`);
+  let index = 2;
+  while (fs.existsSync(filePath)) {
+    filePath = path.join(targetDir, `${parsed.name}-${index}${parsed.ext}`);
+    index += 1;
+  }
+  return filePath;
+}
+
+function collectArtifacts(job) {
+  const batch = new Date().toISOString().replace(/[:.]/g, "-");
+  const targetDir = path.join(artifactsDir, `${batch}-${job.id.slice(0, 8)}`);
+  const copied = [];
+  const baseline = job.artifactBaseline || new Map();
+
+  for (const dir of [job.workspace, generatedImagesDir]) {
+    for (const filePath of walkFiles(dir, artifactExtensions)) {
+      const resolved = path.resolve(filePath);
+      if (resolved.startsWith(path.resolve(artifactsDir))) continue;
+      const stat = fs.statSync(filePath);
+      const key = resolved.toLowerCase();
+      const fingerprint = `${stat.mtimeMs}:${stat.size}`;
+      if (baseline.get(key) === fingerprint) continue;
+      fs.mkdirSync(targetDir, { recursive: true });
+      const targetPath = uniqueArtifactPath(targetDir, path.basename(filePath));
+      fs.copyFileSync(filePath, targetPath);
+      copied.push({
+        source: filePath,
+        path: targetPath,
+        name: path.relative(artifactsDir, targetPath).replaceAll("\\", "/"),
+        size: stat.size,
+        mtimeMs: fs.statSync(targetPath).mtimeMs,
+        image: imageExtensions.has(path.extname(targetPath).toLowerCase()),
+        url: `/api/artifacts/${path.relative(artifactsDir, targetPath).replaceAll("\\", "/").split("/").map(encodeURIComponent).join("/")}`,
+      });
+    }
+  }
+
+  if (copied.length) {
+    saveJson(path.join(targetDir, "_sources.json"), copied.map((item) => ({
+      name: item.name,
+      source: item.source,
+      size: item.size,
+    })));
+  }
+  return copied.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
 function sanitizeFileName(name) {
@@ -308,6 +395,7 @@ function startJob(input) {
     prompt,
     sessionId: session?.id || null,
     isResume,
+    artifactBaseline: snapshotArtifacts(workspace),
     commandPreview: ["codex.cmd", ...codexArgs.slice(0, -1), "<prompt>"].join(" "),
     child: null,
   };
@@ -376,6 +464,8 @@ function startJob(input) {
   });
   child.on("close", (code, signal) => {
     job.status = code === 0 ? "done" : "failed";
+    const artifacts = collectArtifacts(job);
+    if (artifacts.length) push(job, "artifacts", artifacts);
     push(job, "exit", { code, signal, status: job.status });
     for (const res of job.clients) res.end();
     job.clients.clear();
@@ -403,6 +493,7 @@ function openCodexLoginShell() {
 
 function openFolder(target) {
   const known = {
+    artifacts: artifactsDir,
     generatedImages: generatedImagesDir,
     uploads: uploadsDir,
     workspaces: workspaceRoot,
@@ -464,6 +555,14 @@ function serveStatic(req, res) {
 }
 
 function serveGeneratedImage(req, res, name) {
+  serveFileFromDir(req, res, generatedImagesDir, name);
+}
+
+function serveArtifact(req, res, name) {
+  serveFileFromDir(req, res, artifactsDir, name);
+}
+
+function serveFileFromDir(req, res, baseDir, name) {
   const decoded = decodeURIComponent(name || "");
   if (!decoded || decoded.includes("..")) {
     res.writeHead(400);
@@ -471,8 +570,8 @@ function serveGeneratedImage(req, res, name) {
     return;
   }
 
-  const filePath = path.join(generatedImagesDir, decoded);
-  const resolvedDir = path.resolve(generatedImagesDir);
+  const filePath = path.join(baseDir, decoded);
+  const resolvedDir = path.resolve(baseDir);
   const resolvedFile = path.resolve(filePath);
   if (!resolvedFile.startsWith(resolvedDir) || !fs.existsSync(resolvedFile) || !fs.statSync(resolvedFile).isFile()) {
     res.writeHead(404);
@@ -487,6 +586,13 @@ function serveGeneratedImage(req, res, name) {
     ".jpeg": "image/jpeg",
     ".webp": "image/webp",
     ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+    ".pdf": "application/pdf",
+    ".html": "text/html; charset=utf-8",
+    ".htm": "text/html; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+    ".md": "text/markdown; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
   }[ext] || "application/octet-stream";
   res.writeHead(200, { "content-type": type, "cache-control": "no-store" });
   fs.createReadStream(resolvedFile).pipe(res);
@@ -511,6 +617,7 @@ const server = http.createServer(async (req, res) => {
         codexInstalled: fs.existsSync(codexCmd) || fs.existsSync(portableCodexExe),
         workspaces: listWorkspaces(),
         generatedImages: listGeneratedImages(),
+        artifacts: listArtifacts(),
         history: loadHistory(),
         state: loadState(),
         updateStatus: loadJson(updateStatusFile, null),
@@ -530,8 +637,18 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/artifacts") {
+      sendJson(res, 200, { artifacts: listArtifacts() });
+      return;
+    }
+
     if (req.method === "GET" && url.pathname.startsWith("/api/generated-images/")) {
       serveGeneratedImage(req, res, url.pathname.slice("/api/generated-images/".length));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/artifacts/")) {
+      serveArtifact(req, res, url.pathname.slice("/api/artifacts/".length));
       return;
     }
 

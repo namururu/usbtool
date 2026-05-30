@@ -49,6 +49,7 @@ $paths = @(
     (Join-Path $DataDir "gui.pid"),
     (Join-Path $DataDir "upload-test.json"),
     (Join-Path $DataDir "uploads"),
+    (Join-Path $DataDir "artifacts"),
     (Join-Path $DataDir "codex-home\generated_images"),
     (Join-Path $DataDir "codex-home\tmp"),
     (Join-Path $Root ".tmp")

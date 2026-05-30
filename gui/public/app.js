@@ -19,6 +19,7 @@ const el = {
   attachBtn: document.querySelector("#attachBtn"),
   screenshotBtn: document.querySelector("#screenshotBtn"),
   latestImageBtn: document.querySelector("#latestImageBtn"),
+  openArtifactsBtn: document.querySelector("#openArtifactsBtn"),
   openImagesBtn: document.querySelector("#openImagesBtn"),
   openUploadsBtn: document.querySelector("#openUploadsBtn"),
   analyticsBtn: document.querySelector("#analyticsBtn"),
@@ -259,6 +260,11 @@ function appendImageCard(image) {
     </div>
   `);
   el.terminal.scrollTop = el.terminal.scrollHeight;
+}
+
+function appendArtifactCards(artifacts) {
+  const images = (artifacts || []).filter((item) => item.image);
+  for (const image of images) appendImageCard(image);
 }
 
 async function showLatestGeneratedImage(options = {}) {
@@ -514,6 +520,10 @@ async function runCodex() {
       appendLine(JSON.parse(event.data), "error");
     }
   });
+  stream.addEventListener("artifacts", (event) => {
+    if (!shouldHandleEvent(event)) return;
+    appendArtifactCards(JSON.parse(event.data));
+  });
   stream.addEventListener("exit", async (event) => {
     if (!shouldHandleEvent(event)) return;
     const data = JSON.parse(event.data);
@@ -604,6 +614,7 @@ el.attachBtn.addEventListener("click", () => el.fileInput.click());
 el.fileInput.addEventListener("change", () => addFiles(el.fileInput.files));
 el.screenshotBtn.addEventListener("click", () => captureScreenshot().catch((error) => appendLine(error.message, "error")));
 el.latestImageBtn.addEventListener("click", () => showLatestGeneratedImage({ allowExisting: true, baseline: 0, notice: true }).catch((error) => appendLine(error.message, "error")));
+el.openArtifactsBtn.addEventListener("click", () => openFolder("artifacts"));
 el.openImagesBtn.addEventListener("click", () => openFolder("generatedImages"));
 el.openUploadsBtn.addEventListener("click", () => openFolder("uploads"));
 el.analyticsBtn.addEventListener("click", () => openUrl("analytics"));
