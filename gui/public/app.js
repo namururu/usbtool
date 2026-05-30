@@ -6,6 +6,7 @@ const el = {
   history: document.querySelector("#history"),
   workspace: document.querySelector("#workspace"),
   model: document.querySelector("#model"),
+  tokenBudget: document.querySelector("#tokenBudget"),
   permission: document.querySelector("#permission"),
   bypass: document.querySelector("#bypass"),
   enterToSend: document.querySelector("#enterToSend"),
@@ -61,7 +62,18 @@ function updateSessionLabel() {
 }
 
 function updateTokenLabel(value) {
-  el.tokenState.textContent = value ? `tokens: ${value}` : "tokens: -";
+  const used = Number(String(value || "").replaceAll(",", ""));
+  const budget = Number(el.tokenBudget.value || localStorage.getItem("portableCodexTokenBudget") || 0);
+  if (!used) {
+    el.tokenState.textContent = budget ? `tokens: 0 / 残 ${budget.toLocaleString()}` : "tokens: -";
+    return;
+  }
+  if (!budget) {
+    el.tokenState.textContent = `tokens: ${used.toLocaleString()}`;
+    return;
+  }
+  const remaining = Math.max(0, budget - used);
+  el.tokenState.textContent = `tokens: ${used.toLocaleString()} / 残 ${remaining.toLocaleString()}`;
 }
 
 function append(text, kind = "") {
@@ -304,6 +316,10 @@ async function refreshStatus() {
     : "未確認";
   if (!el.workspace.value) el.workspace.value = status.workspaceRoot;
   latestImageMtime = status.generatedImages?.[0]?.mtimeMs || 0;
+  if (!el.tokenBudget.value) {
+    el.tokenBudget.value = localStorage.getItem("portableCodexTokenBudget") || "";
+  }
+  updateTokenLabel(currentRun?.tokensUsed || "");
   statusCache = status;
   updateSessionLabel();
   renderHistory(status.history || []);
@@ -471,6 +487,12 @@ el.clearBtn.addEventListener("click", () => {
   el.terminal.textContent = "";
 });
 el.workspace.addEventListener("change", updateSessionLabel);
+el.tokenBudget.addEventListener("change", () => {
+  const value = el.tokenBudget.value.trim();
+  if (value) localStorage.setItem("portableCodexTokenBudget", value);
+  else localStorage.removeItem("portableCodexTokenBudget");
+  updateTokenLabel(currentRun?.tokensUsed || "");
+});
 
 document.addEventListener("dragover", (event) => {
   event.preventDefault();

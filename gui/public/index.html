@@ -59,6 +59,10 @@
             <input id="model" type="text" placeholder="空欄ならCodex既定">
           </div>
           <div class="field">
+            <label for="tokenBudget">トークン上限</label>
+            <input id="tokenBudget" type="number" min="1" step="1000" placeholder="例: 400000">
+          </div>
+          <div class="field">
             <label for="permission">権限</label>
             <select id="permission">
               <option value="workspace-write">通常: workspace-write</option>
