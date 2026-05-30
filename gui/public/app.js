@@ -441,7 +441,8 @@ async function runCodex() {
   }
 
   const permission = el.bypass.checked ? "bypass" : el.permission.value;
-  const forceNewForImage = el.resume.checked && looksLikeImagePrompt(prompt) && !pendingFiles.length;
+  const hasImageAttachment = pendingFiles.some((file) => String(file.type || "").startsWith("image/"));
+  const forceNewForImage = el.resume.checked && (looksLikeImagePrompt(prompt) || hasImageAttachment);
   setRunning(true);
   el.commandPreview.textContent = "";
   currentRun = {
@@ -531,7 +532,7 @@ async function runCodex() {
       currentRun.authNoticeShown = true;
       appendLine("ログインされていません。ログインしてください。", "error");
     }
-    if (/(\bERROR\b|Unauthorized|failed|panic|Exception)/i.test(text)) currentRun.hadError = true;
+    if (/(\bERROR\b|Unauthorized|panic|Exception)/i.test(text)) currentRun.hadError = true;
     appendAssistantText(text);
   });
   stream.addEventListener("error", (event) => {
@@ -548,7 +549,7 @@ async function runCodex() {
   stream.addEventListener("exit", async (event) => {
     if (!shouldHandleEvent(event)) return;
     const data = JSON.parse(event.data);
-    const failed = data.code !== 0 || data.status !== "done" || currentRun?.hadError;
+    const failed = data.code !== 0 || data.status !== "done";
     if (failed) {
       appendLine(`--- 終了 code=${data.code} status=${data.status} ---`, "error");
       if (currentRun?.meta) {
