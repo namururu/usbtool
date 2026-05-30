@@ -7,7 +7,9 @@ Stop-CodexGui.ps1
 Update-Codex.ps1
 Update-Self.ps1
 Build-UpdateZip.ps1
+Clean-UsbCodex.ps1
 Login-Codex.bat
 start.bat
+clean.bat
 update.json
 gui/**

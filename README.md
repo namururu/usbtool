@@ -116,6 +116,38 @@ $env:PORTABLE_CODEX_UPDATE_MANIFEST = "https://github.com/YOUR_NAME/portable-cod
 
 `start.bat` checks for updates before launching the GUI. The updater refuses to overwrite `data`, `tools`, `workspaces`, `dist`, and `.tmp`.
 
+## Clean Local USB State
+
+Remove GUI history, uploaded files, generated images, logs, and temporary files while keeping login/auth:
+
+```powershell
+.\Clean-UsbCodex.ps1
+```
+
+Preview first:
+
+```powershell
+.\Clean-UsbCodex.ps1 -WhatIf
+```
+
+Also remove Codex auth/session state:
+
+```powershell
+.\Clean-UsbCodex.ps1 -Auth
+```
+
+Also remove workspaces:
+
+```powershell
+.\Clean-UsbCodex.ps1 -Workspaces
+```
+
+Remove everything local except the app and runtime:
+
+```powershell
+.\Clean-UsbCodex.ps1 -All
+```
+
 ## Security Notes
 
 If you keep `data/codex-home` on the USB drive, the USB drive may contain login/session material after you sign in. Treat it like a password-bearing device.
