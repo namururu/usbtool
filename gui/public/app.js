@@ -12,11 +12,15 @@ const el = {
   autonomous: document.querySelector("#autonomous"),
   extraInstruction: document.querySelector("#extraInstruction"),
   prompt: document.querySelector("#prompt"),
+  fileInput: document.querySelector("#fileInput"),
+  attachBtn: document.querySelector("#attachBtn"),
+  screenshotBtn: document.querySelector("#screenshotBtn"),
   loginBtn: document.querySelector("#loginBtn"),
   runBtn: document.querySelector("#runBtn"),
   newSessionBtn: document.querySelector("#newSessionBtn"),
   stopBtn: document.querySelector("#stopBtn"),
   clearBtn: document.querySelector("#clearBtn"),
+  attachments: document.querySelector("#attachments"),
   terminal: document.querySelector("#terminal"),
   runState: document.querySelector("#runState"),
   commandPreview: document.querySelector("#commandPreview"),
@@ -29,6 +33,15 @@ let stream = null;
 let statusCache = null;
 let currentRun = null;
 let latestImageMtime = 0;
+let pendingFiles = [];
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
 
 function sessionForWorkspace(workspace) {
   const sessions = statusCache?.state?.sessions || {};
@@ -46,7 +59,7 @@ function updateTokenLabel(value) {
 
 function append(text, kind = "") {
   const prefix = kind ? `[${kind}] ` : "";
-  el.terminal.textContent += `${prefix}${text}`;
+  el.terminal.append(document.createTextNode(`${prefix}${text}`));
   el.terminal.scrollTop = el.terminal.scrollHeight;
 }
 
@@ -54,10 +67,92 @@ function appendLine(text, kind = "") {
   append(`${text}\n`, kind);
 }
 
+function setRunning(running) {
+  el.runBtn.disabled = running;
+  el.stopBtn.disabled = !running || !currentJob;
+  el.runState.textContent = running ? "実行中" : "待機中";
+  document.body.classList.toggle("is-running", running);
+}
+
+function renderAttachments() {
+  el.attachments.innerHTML = "";
+  for (const [index, file] of pendingFiles.entries()) {
+    const item = document.createElement("div");
+    item.className = "attachment";
+    const preview = file.type.startsWith("image/") ? `<img src="${file.data}" alt="">` : `<span class="file-icon">FILE</span>`;
+    item.innerHTML = `
+      ${preview}
+      <span title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+      <button type="button" aria-label="削除">x</button>
+    `;
+    item.querySelector("button").addEventListener("click", () => {
+      pendingFiles.splice(index, 1);
+      renderAttachments();
+    });
+    el.attachments.append(item);
+  }
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({
+      name: file.name || `paste-${Date.now()}.png`,
+      type: file.type || "application/octet-stream",
+      size: file.size || 0,
+      data: reader.result,
+    });
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addFiles(files) {
+  const items = [...files].filter(Boolean);
+  if (!items.length) return;
+  const loaded = await Promise.all(items.map(readFileAsDataUrl));
+  pendingFiles.push(...loaded);
+  renderAttachments();
+}
+
+async function captureScreenshot() {
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    appendLine("このブラウザではスクショ取得が使えません。", "error");
+    return;
+  }
+  const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  try {
+    const video = document.createElement("video");
+    video.srcObject = stream;
+    await video.play();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    const file = new File([blob], `screenshot-${new Date().toISOString().replace(/[:.]/g, "-")}.png`, { type: "image/png" });
+    await addFiles([file]);
+  } finally {
+    for (const track of stream.getTracks()) track.stop();
+  }
+}
+
+async function uploadPendingFiles() {
+  if (!pendingFiles.length) return [];
+  const res = await fetch("/api/uploads", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ files: pendingFiles }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || "添付のアップロードに失敗しました。");
+  return body.uploads || [];
+}
+
 function appendImageCard(image) {
   const marker = `[image:${image.name}]`;
   if (el.terminal.textContent.includes(marker)) return;
-
   const url = `${image.url}?t=${Math.round(image.mtimeMs)}`;
   append(`\n${marker}\n`);
   el.terminal.insertAdjacentHTML("beforeend", `
@@ -85,13 +180,6 @@ async function showLatestGeneratedImage() {
   appendImageCard(image);
 }
 
-function setRunning(running) {
-  el.runBtn.disabled = running;
-  el.stopBtn.disabled = !running || !currentJob;
-  el.runState.textContent = running ? "実行中" : "待機中";
-  document.body.classList.toggle("is-running", running);
-}
-
 function renderHistory(history) {
   el.history.innerHTML = "";
   if (!history.length) {
@@ -101,8 +189,7 @@ function renderHistory(history) {
     el.history.append(empty);
     return;
   }
-
-  for (const item of history.slice(0, 12)) {
+  for (const item of history.slice(0, 10)) {
     const button = document.createElement("button");
     button.className = "history-item";
     button.type = "button";
@@ -120,38 +207,24 @@ function renderHistory(history) {
   }
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
 function stripCodexNoise(text) {
   const lines = String(text).replace(/\r\n/g, "\n").split("\n");
   const kept = [];
   let inHeader = false;
-
   for (const line of lines) {
     const trimmed = line.trim();
-
     if (!trimmed) {
       if (!inHeader) kept.push(line);
       continue;
     }
-
     if (trimmed.startsWith("OpenAI Codex v")) {
       inHeader = true;
       continue;
     }
     if (inHeader) {
-      if (trimmed === "--------" || /^[a-zA-Z][\w ]*:/.test(trimmed) || trimmed === "user") {
-        continue;
-      }
+      if (trimmed === "--------" || /^[a-zA-Z][\w ]*:/.test(trimmed) || trimmed === "user") continue;
       inHeader = false;
     }
-
     if (/^\d{4}-\d{2}-\d{2}T.*\b(WARN|ERROR)\b/.test(trimmed)) continue;
     if (trimmed.startsWith("Reading additional input from stdin")) continue;
     if (trimmed.startsWith("ERROR: Reconnecting")) continue;
@@ -159,34 +232,27 @@ function stripCodexNoise(text) {
     if (currentRun?.pendingTokensUsed && /^[\d,]+$/.test(trimmed)) continue;
     if (trimmed === "--------" || trimmed === "user") continue;
     if (/^(workdir|model|provider|approval|sandbox|reasoning effort|reasoning summaries|session id):/.test(trimmed)) continue;
-
     kept.push(line);
   }
-
   return kept.join("\n").replace(/\n{3,}/g, "\n\n");
 }
 
 function consumeTelemetry(rawText) {
   if (!currentRun) return rawText;
-
   const lines = String(rawText).replace(/\r\n/g, "\n").split("\n");
   const visible = [];
-
   for (const line of lines) {
     const trimmed = line.trim();
-
     if (currentRun.pendingTokensUsed && /^[\d,]+$/.test(trimmed)) {
       currentRun.tokensUsed = trimmed;
       currentRun.pendingTokensUsed = false;
       updateTokenLabel(trimmed);
       continue;
     }
-
     if (trimmed === "tokens used") {
       currentRun.pendingTokensUsed = true;
       continue;
     }
-
     const inlineTokens = trimmed.match(/^tokens used\s+([\d,]+)$/i);
     if (inlineTokens) {
       currentRun.tokensUsed = inlineTokens[1];
@@ -194,10 +260,8 @@ function consumeTelemetry(rawText) {
       updateTokenLabel(inlineTokens[1]);
       continue;
     }
-
     visible.push(line);
   }
-
   return visible.join("\n");
 }
 
@@ -218,48 +282,52 @@ async function refreshStatus() {
   el.codexState.className = status.codexInstalled ? "ok" : "bad";
   el.codexHome.textContent = status.codexHome;
   el.rootPath.textContent = status.root;
-  if (!el.workspace.value) {
-    el.workspace.value = status.workspaceRoot;
-  }
-  const latestImage = status.generatedImages?.[0];
-  latestImageMtime = latestImage?.mtimeMs || 0;
+  if (!el.workspace.value) el.workspace.value = status.workspaceRoot;
+  latestImageMtime = status.generatedImages?.[0]?.mtimeMs || 0;
   statusCache = status;
   updateSessionLabel();
   renderHistory(status.history || []);
 }
 
 async function runCodex() {
-  const payload = {
-    workspace: el.workspace.value,
-    model: el.model.value,
-    permission: el.bypass.checked ? "bypass" : el.permission.value,
-    resume: el.resume.checked,
-    japanese: el.japanese.checked,
-    autonomous: el.autonomous.checked,
-    extraInstruction: el.extraInstruction.value,
-    prompt: el.prompt.value,
-  };
-
-  if (!payload.prompt.trim()) {
-    appendLine("依頼が空です。", "error");
+  const prompt = el.prompt.value.trim();
+  if (!prompt && !pendingFiles.length) {
+    appendLine("依頼または添付が空です。", "error");
     return;
   }
 
-  if (payload.permission === "bypass") {
-    const ok = confirm("全突っ張りモードは承認とサンドボックスを飛ばします。このPCを信頼できる場合だけ使ってください。続行しますか？");
+  const permission = el.bypass.checked ? "bypass" : el.permission.value;
+  if (permission === "bypass") {
+    const ok = confirm("全ツッパリモードは承認とサンドボックスを飛ばします。このPCを信頼できる場合だけ使ってください。続行しますか？");
     if (!ok) return;
   }
 
   setRunning(true);
   el.commandPreview.textContent = "";
-  currentRun = {
-    stderr: "",
-    hadError: false,
-    meta: null,
-    tokensUsed: "",
-    pendingTokensUsed: false,
-  };
+  currentRun = { stderr: "", hadError: false, meta: null, tokensUsed: "", pendingTokensUsed: false };
   updateTokenLabel("");
+
+  let uploads = [];
+  try {
+    uploads = await uploadPendingFiles();
+  } catch (error) {
+    appendLine(error.message, "error");
+    setRunning(false);
+    currentRun = null;
+    return;
+  }
+
+  const payload = {
+    workspace: el.workspace.value,
+    model: el.model.value,
+    permission,
+    resume: el.resume.checked,
+    japanese: el.japanese.checked,
+    autonomous: el.autonomous.checked,
+    extraInstruction: el.extraInstruction.value,
+    prompt: prompt || "添付ファイルを確認してください。",
+    uploads,
+  };
 
   const res = await fetch("/api/run", {
     method: "POST",
@@ -274,6 +342,9 @@ async function runCodex() {
     return;
   }
 
+  pendingFiles = [];
+  renderAttachments();
+  el.prompt.value = "";
   currentJob = body.id;
   stream = new EventSource(`/api/jobs/${currentJob}/events`);
 
@@ -281,9 +352,7 @@ async function runCodex() {
     const data = JSON.parse(event.data);
     currentRun.meta = data;
     el.commandPreview.textContent = data.command || "";
-    if (data.sessionId) {
-      el.sessionState.textContent = `session: ${data.sessionId}`;
-    }
+    if (data.sessionId) el.sessionState.textContent = `session: ${data.sessionId}`;
   });
   stream.addEventListener("session", (event) => {
     const data = JSON.parse(event.data);
@@ -293,9 +362,7 @@ async function runCodex() {
   stream.addEventListener("stderr", (event) => {
     const text = JSON.parse(event.data);
     currentRun.stderr += text;
-    if (/(\bERROR\b|Unauthorized|failed|panic|Exception)/i.test(text)) {
-      currentRun.hadError = true;
-    }
+    if (/(\bERROR\b|Unauthorized|failed|panic|Exception)/i.test(text)) currentRun.hadError = true;
     appendAssistantText(text);
   });
   stream.addEventListener("error", (event) => {
@@ -307,7 +374,6 @@ async function runCodex() {
   stream.addEventListener("exit", async (event) => {
     const data = JSON.parse(event.data);
     const failed = data.code !== 0 || data.status !== "done" || currentRun?.hadError;
-
     if (failed) {
       appendLine(`--- 終了 code=${data.code} status=${data.status} ---`, "error");
       if (currentRun?.meta) {
@@ -316,11 +382,8 @@ async function runCodex() {
         appendLine(`mode: ${currentRun.meta.isResume ? "resume" : "new"}`, "error");
       }
       const filteredStderr = stripCodexNoise(currentRun?.stderr || "").trim();
-      if (filteredStderr) {
-        appendLine(filteredStderr, "stderr");
-      }
+      if (filteredStderr) appendLine(filteredStderr, "stderr");
     }
-
     stream.close();
     stream = null;
     currentJob = null;
@@ -347,12 +410,8 @@ async function stopCodex() {
 
 async function openLogin() {
   const res = await fetch("/api/login", { method: "POST" });
-  if (res.ok) {
-    appendLine("ログイン用PowerShellを開きました。ログイン後、この画面から再実行してください。");
-  } else {
-    const body = await res.json().catch(() => ({}));
-    appendLine(body.error || "ログイン起動に失敗しました。", "error");
-  }
+  if (res.ok) appendLine("ログイン用PowerShellを開きました。ログイン後、この画面から再実行してください。");
+  else appendLine("ログイン起動に失敗しました。", "error");
 }
 
 async function newSession() {
@@ -365,6 +424,9 @@ async function newSession() {
   appendLine("新規セッションに切り替えました。次の実行では初回指示も送ります。");
 }
 
+el.attachBtn.addEventListener("click", () => el.fileInput.click());
+el.fileInput.addEventListener("change", () => addFiles(el.fileInput.files));
+el.screenshotBtn.addEventListener("click", () => captureScreenshot().catch((error) => appendLine(error.message, "error")));
 el.loginBtn.addEventListener("click", openLogin);
 el.runBtn.addEventListener("click", runCodex);
 el.newSessionBtn.addEventListener("click", newSession);
@@ -373,6 +435,24 @@ el.clearBtn.addEventListener("click", () => {
   el.terminal.textContent = "";
 });
 el.workspace.addEventListener("change", updateSessionLabel);
+
+document.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  document.body.classList.add("is-dragging");
+});
+document.addEventListener("dragleave", () => document.body.classList.remove("is-dragging"));
+document.addEventListener("drop", (event) => {
+  event.preventDefault();
+  document.body.classList.remove("is-dragging");
+  addFiles(event.dataTransfer.files).catch((error) => appendLine(error.message, "error"));
+});
+document.addEventListener("paste", (event) => {
+  const files = [...event.clipboardData.files];
+  if (files.length) addFiles(files).catch((error) => appendLine(error.message, "error"));
+});
+el.prompt.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) runCodex();
+});
 
 refreshStatus().catch((error) => {
   el.codexState.textContent = "エラー";

@@ -7,25 +7,26 @@ const crypto = require("crypto");
 const root = process.env.PORTABLE_CODEX_ROOT || path.resolve(__dirname, "..");
 const publicDir = path.join(__dirname, "public");
 const workspaceRoot = path.join(root, "workspaces");
-const codexHome = path.join(root, "data", "codex-home");
+const dataDir = path.join(root, "data");
+const codexHome = path.join(dataDir, "codex-home");
 const generatedImagesDir = path.join(codexHome, "generated_images");
+const uploadsDir = path.join(dataDir, "uploads");
 const codexCmd = path.join(root, "tools", "npm-global", "codex.cmd");
 const codexJs = path.join(root, "tools", "npm-global", "node_modules", "@openai", "codex", "bin", "codex.js");
 const nodeDir = path.join(root, "tools", "node");
 const nodeExe = path.join(nodeDir, "node.exe");
 const npmPrefix = path.join(root, "tools", "npm-global");
 const npmCache = path.join(root, "tools", "npm-cache");
-const historyFile = path.join(root, "data", "gui-history.json");
-const stateFile = path.join(root, "data", "gui-state.json");
+const historyFile = path.join(dataDir, "gui-history.json");
+const stateFile = path.join(dataDir, "gui-state.json");
 
 const args = process.argv.slice(2);
 const portArgIndex = args.indexOf("--port");
 const port = portArgIndex >= 0 ? Number(args[portArgIndex + 1]) : Number(process.env.PORT || 41731);
-
 const jobs = new Map();
 
 function ensureDirs() {
-  for (const dir of [workspaceRoot, codexHome, npmCache, path.dirname(historyFile)]) {
+  for (const dir of [workspaceRoot, codexHome, npmCache, uploadsDir]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 }
@@ -40,13 +41,13 @@ function sendJson(res, code, body) {
   res.end(payload);
 }
 
-function readBody(req) {
+function readBody(req, maxBytes = 50_000_000) {
   return new Promise((resolve, reject) => {
     let data = "";
     req.setEncoding("utf8");
     req.on("data", (chunk) => {
       data += chunk;
-      if (data.length > 1_000_000) {
+      if (Buffer.byteLength(data) > maxBytes) {
         reject(new Error("Request body is too large."));
         req.destroy();
       }
@@ -68,24 +69,29 @@ function resolveWorkspace(input) {
   return full;
 }
 
-function loadHistory() {
+function loadJson(file, fallback) {
   try {
-    return JSON.parse(fs.readFileSync(historyFile, "utf8"));
+    return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch {
-    return [];
+    return fallback;
   }
+}
+
+function saveJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(value, null, 2), "utf8");
+}
+
+function loadHistory() {
+  return loadJson(historyFile, []);
 }
 
 function loadState() {
-  try {
-    return JSON.parse(fs.readFileSync(stateFile, "utf8"));
-  } catch {
-    return {};
-  }
+  return loadJson(stateFile, {});
 }
 
 function saveState(state) {
-  fs.writeFileSync(stateFile, JSON.stringify(state, null, 2), "utf8");
+  saveJson(stateFile, state);
 }
 
 function getWorkspaceStateKey(workspace) {
@@ -111,16 +117,14 @@ function setCurrentSession(workspace, sessionId) {
 
 function clearCurrentSession(workspace) {
   const state = loadState();
-  if (state.sessions) {
-    delete state.sessions[getWorkspaceStateKey(workspace)];
-  }
+  if (state.sessions) delete state.sessions[getWorkspaceStateKey(workspace)];
   saveState(state);
 }
 
 function appendHistory(entry) {
   const history = loadHistory();
   history.unshift(entry);
-  fs.writeFileSync(historyFile, JSON.stringify(history.slice(0, 80), null, 2), "utf8");
+  saveJson(historyFile, history.slice(0, 80));
 }
 
 function listWorkspaces() {
@@ -132,7 +136,6 @@ function listWorkspaces() {
 
 function listGeneratedImages() {
   if (!fs.existsSync(generatedImagesDir)) return [];
-
   const allowed = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
   return fs.readdirSync(generatedImagesDir, { withFileTypes: true })
     .filter((item) => item.isFile() && allowed.has(path.extname(item.name).toLowerCase()))
@@ -149,20 +152,60 @@ function listGeneratedImages() {
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
+function sanitizeFileName(name) {
+  const base = path.basename(String(name || "upload.bin"));
+  return base.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").slice(0, 120) || "upload.bin";
+}
+
+function isImageMime(type, fileName) {
+  const mime = String(type || "").toLowerCase();
+  const ext = path.extname(String(fileName || "")).toLowerCase();
+  return mime.startsWith("image/") || [".png", ".jpg", ".jpeg", ".webp", ".gif"].includes(ext);
+}
+
+function saveUploads(files) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const batchDir = path.join(uploadsDir, stamp);
+  fs.mkdirSync(batchDir, { recursive: true });
+
+  return files.map((file, index) => {
+    const name = sanitizeFileName(file.name || `upload-${index + 1}`);
+    const match = String(file.data || "").match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) throw new Error(`Invalid upload data for ${name}.`);
+    const mime = file.type || match[1];
+    const bytes = Buffer.from(match[2], "base64");
+    const filePath = path.join(batchDir, name);
+    fs.writeFileSync(filePath, bytes);
+    return {
+      name,
+      path: filePath,
+      type: mime,
+      size: bytes.length,
+      image: isImageMime(mime, name),
+    };
+  });
+}
+
 function buildPrompt(input, includeBaseInstruction) {
   const base = String(input.prompt || "").trim();
-  const japanese = input.japanese !== false;
-  const noQuestions = input.autonomous === true;
   const prefix = [];
 
-  if (includeBaseInstruction && japanese) {
+  if (includeBaseInstruction && input.japanese !== false) {
     prefix.push("以後の回答はすべて日本語で返してください。コマンド出力やファイル名などの固有名は必要に応じて原文のまま残してください。");
   }
-  if (includeBaseInstruction && noQuestions) {
+  if (includeBaseInstruction && input.autonomous === true) {
     prefix.push("可能な限り自律的に作業を進め、実装、検証、結果報告まで行ってください。重大な破壊的操作や認証情報が必要な場合だけ確認してください。");
   }
   if (includeBaseInstruction && input.extraInstruction) {
     prefix.push(String(input.extraInstruction).trim());
+  }
+
+  const uploads = Array.isArray(input.uploads) ? input.uploads : [];
+  const fileNotes = uploads
+    .filter((file) => !file.image)
+    .map((file) => `- ${file.name}: ${file.path}`);
+  if (fileNotes.length) {
+    prefix.push(`添付ファイル:\n${fileNotes.join("\n")}`);
   }
 
   return [...prefix, base].filter(Boolean).join("\n\n");
@@ -171,11 +214,7 @@ function buildPrompt(input, includeBaseInstruction) {
 function addSharedCodexOptions(codexArgs, input) {
   const model = String(input.model || "").trim();
   const permission = String(input.permission || "workspace-write");
-
-  if (model) {
-    codexArgs.push("--model", model);
-  }
-
+  if (model) codexArgs.push("--model", model);
   return permission;
 }
 
@@ -186,9 +225,7 @@ function buildCodexArgs(input, workspace, prompt, session) {
     : ["exec", "--cd", workspace, "--skip-git-repo-check", "--color", "never"];
   const permission = addSharedCodexOptions(codexArgs, input);
 
-  if (isResume) {
-    codexArgs.push("--skip-git-repo-check");
-  }
+  if (isResume) codexArgs.push("--skip-git-repo-check");
 
   if (!isResume && permission === "read-only") {
     codexArgs.push("--sandbox", "read-only");
@@ -200,19 +237,18 @@ function buildCodexArgs(input, workspace, prompt, session) {
     codexArgs.push("--dangerously-bypass-approvals-and-sandbox");
   }
 
-  if (isResume) {
-    codexArgs.push(session.id);
+  const imageUploads = Array.isArray(input.uploads) ? input.uploads.filter((file) => file.image) : [];
+  for (const image of imageUploads) {
+    codexArgs.push("-i", image.path);
   }
+
+  if (isResume) codexArgs.push(session.id);
   codexArgs.push(prompt);
   return { codexArgs, isResume };
 }
 
 function push(job, type, data) {
-  const event = {
-    type,
-    data,
-    at: new Date().toISOString(),
-  };
+  const event = { type, data, at: new Date().toISOString() };
   job.events.push(event);
   for (const res of job.clients) {
     res.write(`event: ${type}\n`);
@@ -231,20 +267,16 @@ function stopJob(job) {
 
 function startJob(input) {
   if (!fs.existsSync(codexJs) || !fs.existsSync(nodeExe)) {
-    throw new Error("codex.cmd が見つかりません。先に Install-UsbCodex.ps1 を実行してください。");
+    throw new Error("Codex CLIが見つかりません。先に Install-UsbCodex.ps1 を実行してください。");
   }
 
   const id = crypto.randomUUID();
   const workspace = resolveWorkspace(input.workspace);
-  if (input.newSession === true) {
-    clearCurrentSession(workspace);
-  }
+  if (input.newSession === true) clearCurrentSession(workspace);
   const session = input.newSession === true ? null : getCurrentSession(workspace);
   const includeBaseInstruction = !(session?.id && input.resume !== false);
   const prompt = buildPrompt(input, includeBaseInstruction);
-  if (!prompt) {
-    throw new Error("プロンプトが空です。");
-  }
+  if (!prompt) throw new Error("プロンプトが空です。");
 
   const { codexArgs, isResume } = buildCodexArgs(input, workspace, prompt, session);
   const job = {
@@ -319,9 +351,7 @@ function startJob(input) {
   child.on("close", (code, signal) => {
     job.status = code === 0 ? "done" : "failed";
     push(job, "exit", { code, signal, status: job.status });
-    for (const res of job.clients) {
-      res.end();
-    }
+    for (const res of job.clients) res.end();
     job.clients.clear();
   });
 
@@ -428,6 +458,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/uploads") {
+      const input = JSON.parse(await readBody(req));
+      const files = Array.isArray(input.files) ? input.files : [];
+      sendJson(res, 200, { uploads: saveUploads(files) });
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/api/generated-images") {
       sendJson(res, 200, { images: listGeneratedImages() });
       return;
@@ -440,8 +477,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/session/clear") {
       const input = JSON.parse(await readBody(req));
-      const workspace = resolveWorkspace(input.workspace);
-      clearCurrentSession(workspace);
+      clearCurrentSession(resolveWorkspace(input.workspace));
       sendJson(res, 200, { ok: true });
       return;
     }
