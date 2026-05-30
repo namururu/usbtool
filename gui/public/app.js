@@ -391,6 +391,10 @@ function consumeTelemetry(rawText) {
 function appendAssistantText(rawText) {
   const text = stripCodexNoise(consumeTelemetry(rawText));
   if (text.trim()) {
+    const dedupeKey = text.replace(/\s+/g, " ").trim();
+    currentRun.visibleTextKeys ||= new Set();
+    if (currentRun.visibleTextKeys.has(dedupeKey)) return;
+    currentRun.visibleTextKeys.add(dedupeKey);
     markActivity();
     append(text.endsWith("\n") ? text : `${text}\n`);
     if (text.includes("画像を生成しました")) {
@@ -429,6 +433,7 @@ async function refreshStatus() {
 }
 
 async function runCodex() {
+  if (currentJob) return;
   const prompt = el.prompt.value.trim();
   if (!prompt && !pendingFiles.length) {
     appendLine("依頼または添付が空です。", "error");
@@ -448,6 +453,7 @@ async function runCodex() {
     authNoticeShown: false,
     imageRequested: false,
     imageBaselineMtime: latestImageMtime,
+    visibleTextKeys: new Set(),
   };
   updateTokenLabel("");
 
@@ -551,7 +557,7 @@ async function runCodex() {
         appendLine(`mode: ${currentRun.meta.isResume ? "resume" : "new"}`, "error");
       }
       const filteredStderr = stripCodexNoise(currentRun?.stderr || "").trim();
-      if (filteredStderr && !currentRun?.nonPersistedNoticeShown) appendLine(filteredStderr, "stderr");
+      if (filteredStderr && !currentRun?.nonPersistedNoticeShown) appendAssistantText(filteredStderr);
     }
     if (!failed && currentRun?.imageRequested) {
       await showLatestGeneratedImage({
