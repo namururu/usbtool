@@ -399,6 +399,27 @@ function openCodexLoginShell() {
   child.unref();
 }
 
+function openFolder(target) {
+  const known = {
+    generatedImages: generatedImagesDir,
+    uploads: uploadsDir,
+    workspaces: workspaceRoot,
+  };
+  const folder = known[target];
+  if (!folder) throw new Error("Unknown folder target.");
+  fs.mkdirSync(folder, { recursive: true });
+  const resolvedRoot = path.resolve(root);
+  const resolvedFolder = path.resolve(folder);
+  if (!resolvedFolder.startsWith(resolvedRoot)) {
+    throw new Error("Refusing to open a folder outside portable root.");
+  }
+  const child = spawn("explorer.exe", [resolvedFolder], {
+    windowsHide: false,
+    stdio: "ignore",
+  });
+  child.unref();
+}
+
 function serveStatic(req, res) {
   const url = new URL(req.url, "http://127.0.0.1");
   const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
@@ -515,6 +536,13 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/login") {
       openCodexLoginShell();
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/open-folder") {
+      const input = JSON.parse(await readBody(req));
+      openFolder(input.target);
       sendJson(res, 200, { ok: true });
       return;
     }

@@ -56,7 +56,14 @@
           </div>
           <div class="field">
             <label for="model">モデル</label>
-            <input id="model" type="text" placeholder="空欄ならCodex既定">
+            <select id="model">
+              <option value="">Codex既定</option>
+              <option value="gpt-5.5">gpt-5.5</option>
+              <option value="gpt-5.4">gpt-5.4</option>
+              <option value="gpt-5.4-mini">gpt-5.4-mini</option>
+              <option value="gpt-5.3-codex">gpt-5.3-codex</option>
+              <option value="gpt-5.3-codex-spark">gpt-5.3-codex-spark</option>
+            </select>
           </div>
           <div class="field">
             <label for="tokenBudget">トークン上限</label>
@@ -122,6 +129,8 @@
         <button id="attachBtn" type="button">添付</button>
         <button id="screenshotBtn" type="button">スクショ</button>
         <button id="latestImageBtn" type="button">最新画像</button>
+        <button id="openImagesBtn" type="button">画像フォルダ</button>
+        <button id="openUploadsBtn" type="button">添付フォルダ</button>
         <button id="loginBtn" type="button">ログイン</button>
         <button id="newSessionBtn" type="button">新規セッション</button>
         <button id="clearBtn" type="button">ログ消去</button>

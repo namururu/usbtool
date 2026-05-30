@@ -19,6 +19,8 @@ const el = {
   attachBtn: document.querySelector("#attachBtn"),
   screenshotBtn: document.querySelector("#screenshotBtn"),
   latestImageBtn: document.querySelector("#latestImageBtn"),
+  openImagesBtn: document.querySelector("#openImagesBtn"),
+  openUploadsBtn: document.querySelector("#openUploadsBtn"),
   loginBtn: document.querySelector("#loginBtn"),
   runBtn: document.querySelector("#runBtn"),
   newSessionBtn: document.querySelector("#newSessionBtn"),
@@ -38,6 +40,7 @@ let statusCache = null;
 let currentRun = null;
 let latestImageMtime = 0;
 let pendingFiles = [];
+const settingsKey = "portableCodexGuiSettings";
 
 function isAuthErrorText(text) {
   return /(401 Unauthorized|Missing bearer|authentication|ログイン|login)/i.test(String(text || ""));
@@ -74,6 +77,43 @@ function updateTokenLabel(value) {
   }
   const remaining = Math.max(0, budget - used);
   el.tokenState.textContent = `tokens: ${used.toLocaleString()} / 残 ${remaining.toLocaleString()}`;
+}
+
+function readSettings() {
+  try {
+    return JSON.parse(localStorage.getItem(settingsKey) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function writeSettings() {
+  const settings = {
+    workspace: el.workspace.value,
+    model: el.model.value,
+    tokenBudget: el.tokenBudget.value,
+    permission: el.permission.value,
+    bypass: el.bypass.checked,
+    enterToSend: el.enterToSend.checked,
+    resume: el.resume.checked,
+    japanese: el.japanese.checked,
+    autonomous: el.autonomous.checked,
+    extraInstruction: el.extraInstruction.value,
+  };
+  localStorage.setItem(settingsKey, JSON.stringify(settings));
+}
+
+function applySettings(settings) {
+  if (settings.workspace) el.workspace.value = settings.workspace;
+  if (settings.model !== undefined) el.model.value = settings.model;
+  if (settings.tokenBudget !== undefined) el.tokenBudget.value = settings.tokenBudget;
+  if (settings.permission) el.permission.value = settings.permission;
+  if (settings.bypass !== undefined) el.bypass.checked = Boolean(settings.bypass);
+  if (settings.enterToSend !== undefined) el.enterToSend.checked = Boolean(settings.enterToSend);
+  if (settings.resume !== undefined) el.resume.checked = Boolean(settings.resume);
+  if (settings.japanese !== undefined) el.japanese.checked = Boolean(settings.japanese);
+  if (settings.autonomous !== undefined) el.autonomous.checked = Boolean(settings.autonomous);
+  if (settings.extraInstruction !== undefined) el.extraInstruction.value = settings.extraInstruction;
 }
 
 function append(text, kind = "") {
@@ -307,6 +347,7 @@ function appendAssistantText(rawText) {
 async function refreshStatus() {
   const res = await fetch("/api/status");
   const status = await res.json();
+  applySettings(readSettings());
   el.codexState.textContent = status.codexInstalled ? "OK" : "未インストール";
   el.codexState.className = status.codexInstalled ? "ok" : "bad";
   el.codexHome.textContent = status.codexHome;
@@ -316,9 +357,6 @@ async function refreshStatus() {
     : "未確認";
   if (!el.workspace.value) el.workspace.value = status.workspaceRoot;
   latestImageMtime = status.generatedImages?.[0]?.mtimeMs || 0;
-  if (!el.tokenBudget.value) {
-    el.tokenBudget.value = localStorage.getItem("portableCodexTokenBudget") || "";
-  }
   updateTokenLabel(currentRun?.tokensUsed || "");
   statusCache = status;
   updateSessionLabel();
@@ -465,6 +503,18 @@ async function openLogin() {
   else appendLine("ログイン起動に失敗しました。", "error");
 }
 
+async function openFolder(target) {
+  const res = await fetch("/api/open-folder", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ target }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    appendLine(body.error || "フォルダを開けませんでした。", "error");
+  }
+}
+
 async function newSession() {
   await fetch("/api/session/clear", {
     method: "POST",
@@ -479,6 +529,8 @@ el.attachBtn.addEventListener("click", () => el.fileInput.click());
 el.fileInput.addEventListener("change", () => addFiles(el.fileInput.files));
 el.screenshotBtn.addEventListener("click", () => captureScreenshot().catch((error) => appendLine(error.message, "error")));
 el.latestImageBtn.addEventListener("click", () => showLatestGeneratedImage({ allowExisting: true, baseline: 0, notice: true }).catch((error) => appendLine(error.message, "error")));
+el.openImagesBtn.addEventListener("click", () => openFolder("generatedImages"));
+el.openUploadsBtn.addEventListener("click", () => openFolder("uploads"));
 el.loginBtn.addEventListener("click", openLogin);
 el.runBtn.addEventListener("click", runCodex);
 el.newSessionBtn.addEventListener("click", newSession);
@@ -486,13 +538,17 @@ el.stopBtn.addEventListener("click", stopCodex);
 el.clearBtn.addEventListener("click", () => {
   el.terminal.textContent = "";
 });
-el.workspace.addEventListener("change", updateSessionLabel);
+el.workspace.addEventListener("change", () => {
+  updateSessionLabel();
+  writeSettings();
+});
 el.tokenBudget.addEventListener("change", () => {
-  const value = el.tokenBudget.value.trim();
-  if (value) localStorage.setItem("portableCodexTokenBudget", value);
-  else localStorage.removeItem("portableCodexTokenBudget");
+  writeSettings();
   updateTokenLabel(currentRun?.tokensUsed || "");
 });
+for (const item of [el.model, el.permission, el.bypass, el.enterToSend, el.resume, el.japanese, el.autonomous, el.extraInstruction]) {
+  item.addEventListener("change", writeSettings);
+}
 
 document.addEventListener("dragover", (event) => {
   event.preventDefault();
