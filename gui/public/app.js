@@ -28,6 +28,7 @@ const el = {
   clearBtn: document.querySelector("#clearBtn"),
   attachments: document.querySelector("#attachments"),
   terminal: document.querySelector("#terminal"),
+  thinking: document.querySelector("#thinking"),
   runState: document.querySelector("#runState"),
   commandPreview: document.querySelector("#commandPreview"),
   sessionState: document.querySelector("#sessionState"),
@@ -40,6 +41,7 @@ let statusCache = null;
 let currentRun = null;
 let latestImageMtime = 0;
 let pendingFiles = [];
+let thinkingTimer = null;
 const settingsKey = "portableCodexGuiSettings";
 
 function isAuthErrorText(text) {
@@ -130,7 +132,21 @@ function setRunning(running) {
   el.runBtn.disabled = running;
   el.stopBtn.disabled = !running || !currentJob;
   el.runState.textContent = running ? "実行中" : "待機中";
+  el.thinking.hidden = !running;
+  if (!running && thinkingTimer) {
+    clearTimeout(thinkingTimer);
+    thinkingTimer = null;
+  }
   document.body.classList.toggle("is-running", running);
+}
+
+function markActivity() {
+  if (!currentJob) return;
+  el.thinking.hidden = true;
+  if (thinkingTimer) clearTimeout(thinkingTimer);
+  thinkingTimer = setTimeout(() => {
+    if (currentJob) el.thinking.hidden = false;
+  }, 1800);
 }
 
 function renderAttachments() {
@@ -335,6 +351,7 @@ function consumeTelemetry(rawText) {
 function appendAssistantText(rawText) {
   const text = stripCodexNoise(consumeTelemetry(rawText));
   if (text.trim()) {
+    markActivity();
     append(text.endsWith("\n") ? text : `${text}\n`);
     if (text.includes("画像を生成しました")) {
       currentRun.imageRequested = true;
