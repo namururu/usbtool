@@ -1,6 +1,7 @@
 param(
     [string]$OutputDir = "dist\carry",
     [switch]$IncludeRuntime,
+    [switch]$FullRuntime,
     [switch]$IncludeAuth,
     [switch]$IncludeWorkspaces,
     [switch]$CleanOutput
@@ -92,7 +93,7 @@ foreach ($pattern in $patterns) {
     Copy-RelativePath $pattern
 }
 
-if ($IncludeRuntime) {
+if ($IncludeRuntime -and $FullRuntime) {
     foreach ($relative in @("tools\node", "tools\npm-global")) {
         $source = Join-Path $Root $relative
         if (Test-Path $source) {
@@ -100,6 +101,25 @@ if ($IncludeRuntime) {
             Copy-DirectoryRobust -Source $source -Destination $dest
         }
     }
+    New-Item -ItemType Directory -Force -Path (Join-Path $AppOutput "tools\npm-cache") | Out-Null
+}
+elseif ($IncludeRuntime) {
+    $sourceNode = Join-Path $Root "tools\node\node.exe"
+    $destNode = Join-Path $AppOutput "tools\node\node.exe"
+    if (Test-Path $sourceNode) {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destNode) | Out-Null
+        Copy-Item -LiteralPath $sourceNode -Destination $destNode -Force
+    }
+
+    $sourceCodexVendor = Join-Path $Root "tools\npm-global\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc"
+    $destCodexVendor = Join-Path $AppOutput "tools\codex\vendor\x86_64-pc-windows-msvc"
+    if (Test-Path $sourceCodexVendor) {
+        Copy-DirectoryRobust -Source $sourceCodexVendor -Destination $destCodexVendor
+    }
+    else {
+        Write-Warning "Native Codex vendor directory was not found. Falling back to no bundled Codex runtime."
+    }
+
     New-Item -ItemType Directory -Force -Path (Join-Path $AppOutput "tools\npm-cache") | Out-Null
 }
 
@@ -125,7 +145,15 @@ else {
     New-Item -ItemType Directory -Force -Path (Join-Path $AppOutput "workspaces") | Out-Null
 }
 
-$runtimeNote = if ($IncludeRuntime) { "- Runtime tools/node and tools/npm-global" } else { "- Runtime not included" }
+$runtimeNote = if ($IncludeRuntime -and $FullRuntime) {
+    "- Full runtime tools/node and tools/npm-global"
+}
+elseif ($IncludeRuntime) {
+    "- Minimal runtime node.exe and native codex.exe"
+}
+else {
+    "- Runtime not included"
+}
 
 @"
 Portable Codex USB carry package

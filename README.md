@@ -164,7 +164,8 @@ dist\carry\portable-codex-usb
 
 Options:
 
-- `-IncludeRuntime`: include portable Node and npm-installed Codex CLI
+- `-IncludeRuntime`: include minimal `node.exe` plus native `codex.exe`
+- `-FullRuntime`: with `-IncludeRuntime`, include full Node/npm and npm-installed Codex CLI instead
 - `-IncludeAuth`: include `data\codex-home` login/session state
 - `-IncludeWorkspaces`: include `workspaces`
 

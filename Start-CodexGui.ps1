@@ -9,6 +9,7 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $NodeDir = Join-Path $Root "tools\node"
 $NpmPrefix = Join-Path $Root "tools\npm-global"
 $NpmCache = Join-Path $Root "tools\npm-cache"
+$PortableCodexExe = Join-Path $Root "tools\codex\vendor\x86_64-pc-windows-msvc\bin\codex.exe"
 $CodexHome = Join-Path $Root "data\codex-home"
 $WorkspaceDir = Join-Path $Root "workspaces"
 $GuiServer = Join-Path $Root "gui\server.js"
@@ -30,7 +31,7 @@ $env:CODEX_HOME = $CodexHome
 $env:PORTABLE_CODEX_ROOT = $Root
 
 $codexCmd = Join-Path $NpmPrefix "codex.cmd"
-if (-not (Test-Path $codexCmd)) {
+if (-not (Test-Path $codexCmd) -and -not (Test-Path $PortableCodexExe)) {
     Write-Host "Codex CLI is not installed in this portable kit yet."
     Write-Host "Run:"
     Write-Host "  .\Install-UsbCodex.ps1"

@@ -13,6 +13,7 @@ const generatedImagesDir = path.join(codexHome, "generated_images");
 const uploadsDir = path.join(dataDir, "uploads");
 const codexCmd = path.join(root, "tools", "npm-global", "codex.cmd");
 const codexJs = path.join(root, "tools", "npm-global", "node_modules", "@openai", "codex", "bin", "codex.js");
+const portableCodexExe = path.join(root, "tools", "codex", "vendor", "x86_64-pc-windows-msvc", "bin", "codex.exe");
 const nodeDir = path.join(root, "tools", "node");
 const nodeExe = path.join(nodeDir, "node.exe");
 const npmPrefix = path.join(root, "tools", "npm-global");
@@ -266,7 +267,8 @@ function stopJob(job) {
 }
 
 function startJob(input) {
-  if (!fs.existsSync(codexJs) || !fs.existsSync(nodeExe)) {
+  const usePortableExe = fs.existsSync(portableCodexExe);
+  if (!usePortableExe && (!fs.existsSync(codexJs) || !fs.existsSync(nodeExe))) {
     throw new Error("Codex CLIが見つかりません。先に Install-UsbCodex.ps1 を実行してください。");
   }
 
@@ -313,7 +315,15 @@ function startJob(input) {
     prompt: prompt.slice(0, 600),
   });
 
-  const child = spawn(nodeExe, [codexJs, ...codexArgs], {
+  const child = usePortableExe
+    ? spawn(portableCodexExe, codexArgs, {
+      cwd: workspace,
+      env,
+      windowsHide: true,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    : spawn(nodeExe, [codexJs, ...codexArgs], {
     cwd: workspace,
     env,
     windowsHide: true,
@@ -449,7 +459,7 @@ const server = http.createServer(async (req, res) => {
         root,
         workspaceRoot,
         codexHome,
-        codexInstalled: fs.existsSync(codexCmd),
+        codexInstalled: fs.existsSync(codexCmd) || fs.existsSync(portableCodexExe),
         workspaces: listWorkspaces(),
         generatedImages: listGeneratedImages(),
         history: loadHistory(),
