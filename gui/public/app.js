@@ -37,6 +37,10 @@ let currentRun = null;
 let latestImageMtime = 0;
 let pendingFiles = [];
 
+function isAuthErrorText(text) {
+  return /(401 Unauthorized|Missing bearer|authentication|ログイン|login)/i.test(String(text || ""));
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -304,7 +308,7 @@ async function runCodex() {
   const permission = el.bypass.checked ? "bypass" : el.permission.value;
   setRunning(true);
   el.commandPreview.textContent = "";
-  currentRun = { stderr: "", hadError: false, meta: null, tokensUsed: "", pendingTokensUsed: false };
+  currentRun = { stderr: "", hadError: false, meta: null, tokensUsed: "", pendingTokensUsed: false, authNoticeShown: false };
   updateTokenLabel("");
 
   let uploads = [];
@@ -362,6 +366,10 @@ async function runCodex() {
   stream.addEventListener("stderr", (event) => {
     const text = JSON.parse(event.data);
     currentRun.stderr += text;
+    if (isAuthErrorText(text) && !currentRun.authNoticeShown) {
+      currentRun.authNoticeShown = true;
+      appendLine("ログインされていません。ログインしてください。", "error");
+    }
     if (/(\bERROR\b|Unauthorized|failed|panic|Exception)/i.test(text)) currentRun.hadError = true;
     appendAssistantText(text);
   });
