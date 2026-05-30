@@ -51,6 +51,23 @@ function isAuthErrorText(text) {
   return /(401 Unauthorized|Missing bearer|authentication|ログイン|login)/i.test(String(text || ""));
 }
 
+function isNonPersistedItemError(text) {
+  return /Items are not persisted when `store` is set to false|Item with id 'ig_[^']+' not found/i.test(String(text || ""));
+}
+
+function looksLikeImagePrompt(text) {
+  return /(描いて|画像|イラスト|絵|生成|image|illustration|draw)/i.test(String(text || ""));
+}
+
+async function clearCurrentSessionQuietly() {
+  await fetch("/api/session/clear", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ workspace: el.workspace.value }),
+  }).catch(() => {});
+  await refreshStatus().catch(() => {});
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -399,6 +416,7 @@ async function runCodex() {
   }
 
   const permission = el.bypass.checked ? "bypass" : el.permission.value;
+  const forceNewForImage = el.resume.checked && looksLikeImagePrompt(prompt) && !pendingFiles.length;
   setRunning(true);
   el.commandPreview.textContent = "";
   currentRun = {
@@ -427,7 +445,7 @@ async function runCodex() {
     workspace: el.workspace.value,
     model: el.model.value,
     permission,
-    resume: el.resume.checked,
+    resume: forceNewForImage ? false : el.resume.checked,
     japanese: el.japanese.checked,
     autonomous: el.autonomous.checked,
     extraInstruction: el.extraInstruction.value,
@@ -477,6 +495,11 @@ async function runCodex() {
     if (!shouldHandleEvent(event)) return;
     const text = JSON.parse(event.data);
     currentRun.stderr += text;
+    if (isNonPersistedItemError(text) && !currentRun.nonPersistedNoticeShown) {
+      currentRun.nonPersistedNoticeShown = true;
+      appendLine("前の画像生成セッションを再開できません。新規セッションで再実行してください。", "error");
+      clearCurrentSessionQuietly();
+    }
     if (isAuthErrorText(text) && !currentRun.authNoticeShown) {
       currentRun.authNoticeShown = true;
       appendLine("ログインされていません。ログインしてください。", "error");
@@ -503,7 +526,7 @@ async function runCodex() {
         appendLine(`mode: ${currentRun.meta.isResume ? "resume" : "new"}`, "error");
       }
       const filteredStderr = stripCodexNoise(currentRun?.stderr || "").trim();
-      if (filteredStderr) appendLine(filteredStderr, "stderr");
+      if (filteredStderr && !currentRun?.nonPersistedNoticeShown) appendLine(filteredStderr, "stderr");
     }
     if (!failed && currentRun?.imageRequested) {
       await showLatestGeneratedImage({
