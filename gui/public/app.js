@@ -302,11 +302,6 @@ async function runCodex() {
   }
 
   const permission = el.bypass.checked ? "bypass" : el.permission.value;
-  if (permission === "bypass") {
-    const ok = confirm("全ツッパリモードは承認とサンドボックスを飛ばします。このPCを信頼できる場合だけ使ってください。続行しますか？");
-    if (!ok) return;
-  }
-
   setRunning(true);
   el.commandPreview.textContent = "";
   currentRun = { stderr: "", hadError: false, meta: null, tokensUsed: "", pendingTokensUsed: false };
