@@ -47,6 +47,7 @@ let pendingFiles = [];
 let thinkingTimer = null;
 let seenEventIds = new Set();
 let streamFinished = false;
+let runAbortController = null;
 const settingsKey = "portableCodexGuiSettings";
 
 function isAuthErrorText(text) {
@@ -164,7 +165,7 @@ function appendUserMessage(text, uploads = []) {
 
 function setRunning(running) {
   el.runBtn.disabled = running;
-  el.stopBtn.disabled = !running || !currentJob;
+  el.stopBtn.disabled = !running;
   el.runState.textContent = running ? "実行中" : "待機中";
   el.thinking.hidden = !running;
   if (!running && thinkingTimer) {
@@ -524,12 +525,25 @@ async function runCodex() {
     uploads,
   };
 
-  const res = await fetch("/api/run", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const body = await res.json();
+  runAbortController = new AbortController();
+  let res;
+  let body;
+  try {
+    res = await fetch("/api/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: runAbortController.signal,
+    });
+    body = await res.json();
+  } catch (error) {
+    if (error.name !== "AbortError") appendLine(error.message, "error");
+    runAbortController = null;
+    setRunning(false);
+    currentRun = null;
+    return;
+  }
+  runAbortController = null;
   if (!res.ok) {
     appendLine(body.error || "起動に失敗しました。", "error");
     setRunning(false);
@@ -642,10 +656,18 @@ async function runCodex() {
 }
 
 async function stopCodex() {
-  if (!currentJob) return;
+  if (!currentJob && !runAbortController) return;
   el.stopBtn.disabled = true;
   el.runState.textContent = "停止中";
   appendLine("停止しています...", "system");
+  if (!currentJob && runAbortController) {
+    runAbortController.abort();
+    runAbortController = null;
+    currentRun = null;
+    appendLine("停止しました。", "system");
+    setRunning(false);
+    return;
+  }
   try {
     await fetch(`/api/jobs/${currentJob}/stop`, { method: "POST" });
   } catch (error) {
