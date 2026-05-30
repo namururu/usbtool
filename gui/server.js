@@ -139,14 +139,27 @@ function listWorkspaces() {
 function listGeneratedImages() {
   if (!fs.existsSync(generatedImagesDir)) return [];
   const allowed = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
-  return fs.readdirSync(generatedImagesDir, { withFileTypes: true })
-    .filter((item) => item.isFile() && allowed.has(path.extname(item.name).toLowerCase()))
-    .map((item) => {
-      const filePath = path.join(generatedImagesDir, item.name);
+
+  function walk(dir) {
+    const entries = [];
+    for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+      const filePath = path.join(dir, item.name);
+      if (item.isDirectory()) {
+        entries.push(...walk(filePath));
+      } else if (item.isFile() && allowed.has(path.extname(item.name).toLowerCase())) {
+        entries.push(filePath);
+      }
+    }
+    return entries;
+  }
+
+  return walk(generatedImagesDir)
+    .map((filePath) => {
+      const relativeName = path.relative(generatedImagesDir, filePath).replaceAll("\\", "/");
       const stat = fs.statSync(filePath);
       return {
-        name: item.name,
-        url: `/api/generated-images/${encodeURIComponent(item.name)}`,
+        name: relativeName,
+        url: `/api/generated-images/${relativeName.split("/").map(encodeURIComponent).join("/")}`,
         size: stat.size,
         mtimeMs: stat.mtimeMs,
       };
@@ -416,17 +429,16 @@ function serveStatic(req, res) {
 
 function serveGeneratedImage(req, res, name) {
   const decoded = decodeURIComponent(name || "");
-  const base = path.basename(decoded);
-  if (base !== decoded) {
+  if (!decoded || decoded.includes("..")) {
     res.writeHead(400);
     res.end("Bad request");
     return;
   }
 
-  const filePath = path.join(generatedImagesDir, base);
+  const filePath = path.join(generatedImagesDir, decoded);
   const resolvedDir = path.resolve(generatedImagesDir);
   const resolvedFile = path.resolve(filePath);
-  if (!resolvedFile.startsWith(resolvedDir) || !fs.existsSync(resolvedFile)) {
+  if (!resolvedFile.startsWith(resolvedDir) || !fs.existsSync(resolvedFile) || !fs.statSync(resolvedFile).isFile()) {
     res.writeHead(404);
     res.end("Not found");
     return;

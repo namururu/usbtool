@@ -17,6 +17,7 @@ const el = {
   fileInput: document.querySelector("#fileInput"),
   attachBtn: document.querySelector("#attachBtn"),
   screenshotBtn: document.querySelector("#screenshotBtn"),
+  latestImageBtn: document.querySelector("#latestImageBtn"),
   loginBtn: document.querySelector("#loginBtn"),
   runBtn: document.querySelector("#runBtn"),
   newSessionBtn: document.querySelector("#newSessionBtn"),
@@ -172,18 +173,26 @@ function appendImageCard(image) {
   el.terminal.scrollTop = el.terminal.scrollHeight;
 }
 
-async function showLatestGeneratedImage() {
+async function showLatestGeneratedImage(options = {}) {
+  const baseline = options.baseline ?? latestImageMtime;
+  const attempts = options.wait ? 24 : 1;
+
+  for (let i = 0; i < attempts; i += 1) {
   const res = await fetch("/api/generated-images");
   if (!res.ok) return;
   const body = await res.json();
-  const image = body.images?.[0];
-  if (!image) {
-    appendLine("画像ファイルがまだ見つかりません。", "error");
-    return;
+    const image = body.images?.find((item) => item.mtimeMs > baseline) || (options.allowExisting ? body.images?.[0] : null);
+    if (image) {
+      latestImageMtime = image.mtimeMs;
+      appendImageCard(image);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  if (image.mtimeMs < latestImageMtime) return;
-  latestImageMtime = image.mtimeMs;
-  appendImageCard(image);
+
+  if (options.notice !== false) {
+    appendLine("画像生成メッセージは検出しましたが、画像ファイルがまだ見つかりません。", "error");
+  }
 }
 
 function renderHistory(history) {
@@ -276,7 +285,9 @@ function appendAssistantText(rawText) {
   if (text.trim()) {
     append(text.endsWith("\n") ? text : `${text}\n`);
     if (text.includes("画像を生成しました")) {
-      setTimeout(() => showLatestGeneratedImage().catch(() => {}), 500);
+      currentRun.imageRequested = true;
+      const baseline = currentRun.imageBaselineMtime ?? latestImageMtime;
+      showLatestGeneratedImage({ wait: true, baseline, notice: false }).catch(() => {});
     }
   }
 }
@@ -308,7 +319,16 @@ async function runCodex() {
   const permission = el.bypass.checked ? "bypass" : el.permission.value;
   setRunning(true);
   el.commandPreview.textContent = "";
-  currentRun = { stderr: "", hadError: false, meta: null, tokensUsed: "", pendingTokensUsed: false, authNoticeShown: false };
+  currentRun = {
+    stderr: "",
+    hadError: false,
+    meta: null,
+    tokensUsed: "",
+    pendingTokensUsed: false,
+    authNoticeShown: false,
+    imageRequested: false,
+    imageBaselineMtime: latestImageMtime,
+  };
   updateTokenLabel("");
 
   let uploads = [];
@@ -392,6 +412,13 @@ async function runCodex() {
       const filteredStderr = stripCodexNoise(currentRun?.stderr || "").trim();
       if (filteredStderr) appendLine(filteredStderr, "stderr");
     }
+    if (!failed && currentRun?.imageRequested) {
+      await showLatestGeneratedImage({
+        wait: true,
+        baseline: currentRun.imageBaselineMtime ?? latestImageMtime,
+        notice: true,
+      }).catch(() => {});
+    }
     stream.close();
     stream = null;
     currentJob = null;
@@ -435,6 +462,7 @@ async function newSession() {
 el.attachBtn.addEventListener("click", () => el.fileInput.click());
 el.fileInput.addEventListener("change", () => addFiles(el.fileInput.files));
 el.screenshotBtn.addEventListener("click", () => captureScreenshot().catch((error) => appendLine(error.message, "error")));
+el.latestImageBtn.addEventListener("click", () => showLatestGeneratedImage({ allowExisting: true, baseline: 0, notice: true }).catch((error) => appendLine(error.message, "error")));
 el.loginBtn.addEventListener("click", openLogin);
 el.runBtn.addEventListener("click", runCodex);
 el.newSessionBtn.addEventListener("click", newSession);

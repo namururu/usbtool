@@ -90,8 +90,12 @@ function Copy-UpdateItem {
     Assert-UnderRoot $destination
 
     if ((Get-Item $Source).PSIsContainer) {
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
-        Copy-Item -LiteralPath $Source -Destination $destination -Recurse -Force
+        New-Item -ItemType Directory -Force -Path $destination | Out-Null
+        & robocopy.exe $Source $destination /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+        $code = $LASTEXITCODE
+        if ($code -ge 8) {
+            throw "robocopy failed with exit code $code while updating $RelativePath"
+        }
     }
     else {
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
