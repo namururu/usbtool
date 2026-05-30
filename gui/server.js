@@ -394,6 +394,8 @@ function push(job, type, data) {
 
 function stopJob(job) {
   if (!job || !job.child || job.status !== "running") return;
+  job.status = "stopping";
+  push(job, "stop", { status: "stopping" });
   if (process.platform === "win32") {
     spawnSync("taskkill.exe", ["/PID", String(job.child.pid), "/T", "/F"], { windowsHide: true });
   } else {
@@ -500,7 +502,7 @@ function startJob(input) {
     push(job, "error", error.message);
   });
   child.on("close", (code, signal) => {
-    job.status = code === 0 ? "done" : "failed";
+    job.status = job.status === "stopping" ? "stopped" : (code === 0 ? "done" : "failed");
     const artifacts = collectArtifacts(job);
     if (artifacts.length) push(job, "artifacts", artifacts);
     push(job, "exit", { code, signal, status: job.status });

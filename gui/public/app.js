@@ -589,6 +589,17 @@ async function runCodex() {
     if (!shouldHandleEvent(event)) return;
     appendArtifactCards(JSON.parse(event.data));
   });
+  stream.addEventListener("stop", (event) => {
+    if (!shouldHandleEvent(event)) return;
+    appendLine("停止しました。", "system");
+    if (stream) {
+      stream.close();
+      stream = null;
+    }
+    currentJob = null;
+    currentRun = null;
+    setRunning(false);
+  });
   stream.addEventListener("exit", async (event) => {
     if (!shouldHandleEvent(event)) return;
     const data = JSON.parse(event.data);
@@ -632,7 +643,25 @@ async function runCodex() {
 
 async function stopCodex() {
   if (!currentJob) return;
-  await fetch(`/api/jobs/${currentJob}/stop`, { method: "POST" });
+  el.stopBtn.disabled = true;
+  el.runState.textContent = "停止中";
+  appendLine("停止しています...", "system");
+  try {
+    await fetch(`/api/jobs/${currentJob}/stop`, { method: "POST" });
+  } catch (error) {
+    appendLine(error.message, "error");
+  }
+  setTimeout(() => {
+    if (!currentJob) return;
+    if (stream) {
+      stream.close();
+      stream = null;
+    }
+    currentJob = null;
+    currentRun = null;
+    appendLine("停止しました。", "system");
+    setRunning(false);
+  }, 2500);
 }
 
 async function openLogin() {
