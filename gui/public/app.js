@@ -141,13 +141,25 @@ function applySettings(settings) {
 }
 
 function append(text, kind = "") {
-  const prefix = kind ? `[${kind}] ` : "";
-  el.terminal.append(document.createTextNode(`${prefix}${text}`));
+  const row = document.createElement("div");
+  row.className = `log-line ${kind || "assistant"}`;
+  row.textContent = text;
+  el.terminal.append(row);
   el.terminal.scrollTop = el.terminal.scrollHeight;
 }
 
 function appendLine(text, kind = "") {
   append(`${text}\n`, kind);
+}
+
+function appendUserMessage(text, uploads = []) {
+  const parts = [text || "添付を確認してください。"];
+  if (uploads.length) {
+    parts.push("");
+    parts.push("添付:");
+    for (const file of uploads) parts.push(`- ${file.name}`);
+  }
+  append(parts.join("\n"), "user");
 }
 
 function setRunning(running) {
@@ -270,9 +282,9 @@ function appendArtifactCards(artifacts) {
 
 function appendUploadPaths(uploads) {
   if (!uploads?.length) return;
-  appendLine("添付を保存しました:");
+  appendLine("添付を保存しました:", "system");
   for (const file of uploads) {
-    appendLine(`- ${file.name}: ${file.path}`);
+    appendLine(`- ${file.name}: ${file.path}`, "system");
   }
 }
 
@@ -496,6 +508,7 @@ async function runCodex() {
     currentRun = null;
     return;
   }
+  appendUserMessage(prompt, uploads);
 
   const payload = {
     workspace: el.workspace.value,
