@@ -334,8 +334,24 @@ function stripCodexNoise(text) {
   const lines = String(text).replace(/\r\n/g, "\n").split("\n");
   const kept = [];
   let inHeader = false;
+  let skippingBaseInstruction = false;
   for (const line of lines) {
     const trimmed = line.trim();
+    if (/^0\.\d+\.\d+$/.test(trimmed)) continue;
+    if (trimmed === "以後の回答はすべて日本語で返してください。コマンド出力やファイル名などの固有名は必要に応じて原文のまま残してください。") {
+      skippingBaseInstruction = true;
+      continue;
+    }
+    if (skippingBaseInstruction) {
+      if (!trimmed) continue;
+      if (
+        trimmed === "可能な限り自律的に作業を進め、実装、検証、結果報告まで行ってください。重大な破壊的操作や認証情報が必要な場合だけ確認してください。" ||
+        trimmed === "作業後は変更点と検証結果を簡潔に報告してください。"
+      ) {
+        continue;
+      }
+      skippingBaseInstruction = false;
+    }
     if (!trimmed) {
       if (!inHeader) kept.push(line);
       continue;
@@ -358,6 +374,13 @@ function stripCodexNoise(text) {
     kept.push(line);
   }
   return kept.join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+function normalizeVisibleText(text) {
+  return String(text || "")
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/\s+/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function consumeTelemetry(rawText) {
@@ -391,10 +414,14 @@ function consumeTelemetry(rawText) {
 function appendAssistantText(rawText) {
   const text = stripCodexNoise(consumeTelemetry(rawText));
   if (text.trim()) {
-    const dedupeKey = text.replace(/\s+/g, " ").trim();
+    const dedupeKey = normalizeVisibleText(text);
     currentRun.visibleTextKeys ||= new Set();
+    currentRun.visibleTextBuffer ||= [];
     if (currentRun.visibleTextKeys.has(dedupeKey)) return;
+    if (currentRun.visibleTextBuffer.some((old) => old.includes(dedupeKey) || dedupeKey.includes(old))) return;
     currentRun.visibleTextKeys.add(dedupeKey);
+    currentRun.visibleTextBuffer.push(dedupeKey);
+    currentRun.visibleTextBuffer = currentRun.visibleTextBuffer.slice(-20);
     markActivity();
     append(text.endsWith("\n") ? text : `${text}\n`);
     if (text.includes("画像を生成しました")) {
@@ -455,6 +482,7 @@ async function runCodex() {
     imageRequested: false,
     imageBaselineMtime: latestImageMtime,
     visibleTextKeys: new Set(),
+    visibleTextBuffer: [],
   };
   updateTokenLabel("");
 
