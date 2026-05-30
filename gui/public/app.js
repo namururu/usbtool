@@ -43,6 +43,8 @@ let currentRun = null;
 let latestImageMtime = 0;
 let pendingFiles = [];
 let thinkingTimer = null;
+let seenEventIds = new Set();
+let streamFinished = false;
 const settingsKey = "portableCodexGuiSettings";
 
 function isAuthErrorText(text) {
@@ -362,6 +364,14 @@ function appendAssistantText(rawText) {
   }
 }
 
+function shouldHandleEvent(event) {
+  if (!event.lastEventId) return true;
+  const key = `${currentJob || "job"}:${event.lastEventId}`;
+  if (seenEventIds.has(key)) return false;
+  seenEventIds.add(key);
+  return true;
+}
+
 async function refreshStatus() {
   const res = await fetch("/api/status");
   const status = await res.json();
@@ -442,20 +452,29 @@ async function runCodex() {
   renderAttachments();
   el.prompt.value = "";
   currentJob = body.id;
+  seenEventIds = new Set();
+  streamFinished = false;
   stream = new EventSource(`/api/jobs/${currentJob}/events`);
 
   stream.addEventListener("meta", (event) => {
+    if (!shouldHandleEvent(event)) return;
+    streamFinished = true;
     const data = JSON.parse(event.data);
     currentRun.meta = data;
     el.commandPreview.textContent = data.command || "";
     if (data.sessionId) el.sessionState.textContent = `session: ${data.sessionId}`;
   });
   stream.addEventListener("session", (event) => {
+    if (!shouldHandleEvent(event)) return;
     const data = JSON.parse(event.data);
     el.sessionState.textContent = `session: ${data.id}`;
   });
-  stream.addEventListener("stdout", (event) => appendAssistantText(JSON.parse(event.data)));
+  stream.addEventListener("stdout", (event) => {
+    if (!shouldHandleEvent(event)) return;
+    appendAssistantText(JSON.parse(event.data));
+  });
   stream.addEventListener("stderr", (event) => {
+    if (!shouldHandleEvent(event)) return;
     const text = JSON.parse(event.data);
     currentRun.stderr += text;
     if (isAuthErrorText(text) && !currentRun.authNoticeShown) {
@@ -466,12 +485,14 @@ async function runCodex() {
     appendAssistantText(text);
   });
   stream.addEventListener("error", (event) => {
+    if (!shouldHandleEvent(event)) return;
     if (event.data) {
       currentRun.hadError = true;
       appendLine(JSON.parse(event.data), "error");
     }
   });
   stream.addEventListener("exit", async (event) => {
+    if (!shouldHandleEvent(event)) return;
     const data = JSON.parse(event.data);
     const failed = data.code !== 0 || data.status !== "done" || currentRun?.hadError;
     if (failed) {
@@ -499,6 +520,7 @@ async function runCodex() {
     await refreshStatus();
   });
   stream.onerror = () => {
+    if (streamFinished) return;
     if (stream) {
       appendLine("イベント接続が切れました。", "error");
       stream.close();

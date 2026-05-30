@@ -263,9 +263,11 @@ function buildCodexArgs(input, workspace, prompt, session) {
 }
 
 function push(job, type, data) {
-  const event = { type, data, at: new Date().toISOString() };
+  job.nextEventId ||= 1;
+  const event = { id: job.nextEventId++, type, data, at: new Date().toISOString() };
   job.events.push(event);
   for (const res of job.clients) {
+    res.write(`id: ${event.id}\n`);
     res.write(`event: ${type}\n`);
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   }
@@ -594,6 +596,7 @@ const server = http.createServer(async (req, res) => {
         connection: "keep-alive",
       });
       for (const event of job.events) {
+        res.write(`id: ${event.id}\n`);
         res.write(`event: ${event.type}\n`);
         res.write(`data: ${JSON.stringify(event.data)}\n\n`);
       }
