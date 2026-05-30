@@ -94,7 +94,7 @@ foreach ($pattern in $patterns) {
 }
 
 if ($IncludeRuntime -and $FullRuntime) {
-    foreach ($relative in @("tools\node", "tools\npm-global")) {
+    foreach ($relative in @("tools\node", "tools\npm-global", "tools\python")) {
         $source = Join-Path $Root $relative
         if (Test-Path $source) {
             $dest = Join-Path $AppOutput $relative
@@ -118,6 +118,12 @@ elseif ($IncludeRuntime) {
     }
     else {
         Write-Warning "Native Codex vendor directory was not found. Falling back to no bundled Codex runtime."
+    }
+
+    $sourcePython = Join-Path $Root "tools\python"
+    $destPython = Join-Path $AppOutput "tools\python"
+    if (Test-Path $sourcePython) {
+        Copy-DirectoryRobust -Source $sourcePython -Destination $destPython
     }
 
     New-Item -ItemType Directory -Force -Path (Join-Path $AppOutput "tools\npm-cache") | Out-Null
@@ -149,7 +155,12 @@ $runtimeNote = if ($IncludeRuntime -and $FullRuntime) {
     "- Full runtime tools/node and tools/npm-global"
 }
 elseif ($IncludeRuntime) {
-    "- Minimal runtime node.exe and native codex.exe"
+    if (Test-Path (Join-Path $Root "tools\python\python.exe")) {
+        "- Minimal runtime node.exe, native codex.exe, and portable Python"
+    }
+    else {
+        "- Minimal runtime node.exe and native codex.exe"
+    }
 }
 else {
     "- Runtime not included"

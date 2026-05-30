@@ -8,6 +8,7 @@ $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $NodeDir = Join-Path $Root "tools\node"
+$PythonDir = Join-Path $Root "tools\python"
 $NpmPrefix = Join-Path $Root "tools\npm-global"
 $NpmCache = Join-Path $Root "tools\npm-cache"
 $PortableCodexExe = Join-Path $Root "tools\codex\vendor\x86_64-pc-windows-msvc\bin\codex.exe"
@@ -24,6 +25,11 @@ New-Item -ItemType Directory -Force -Path $CodexHome, $DefaultWorkspace, $NpmCac
 
 Add-PathFirst $NodeDir
 Add-PathFirst $NpmPrefix
+if (Test-Path (Join-Path $PythonDir "python.exe")) {
+    Add-PathFirst $PythonDir
+    Add-PathFirst (Join-Path $PythonDir "Scripts")
+    $env:PYTHONHOME = $PythonDir
+}
 
 $env:npm_config_prefix = $NpmPrefix
 $env:npm_config_cache = $NpmCache

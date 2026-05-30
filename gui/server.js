@@ -17,6 +17,8 @@ const codexJs = path.join(root, "tools", "npm-global", "node_modules", "@openai"
 const portableCodexExe = path.join(root, "tools", "codex", "vendor", "x86_64-pc-windows-msvc", "bin", "codex.exe");
 const nodeDir = path.join(root, "tools", "node");
 const nodeExe = path.join(nodeDir, "node.exe");
+const pythonDir = path.join(root, "tools", "python");
+const pythonScriptsDir = path.join(pythonDir, "Scripts");
 const npmPrefix = path.join(root, "tools", "npm-global");
 const npmCache = path.join(root, "tools", "npm-cache");
 const historyFile = path.join(dataDir, "gui-history.json");
@@ -401,13 +403,18 @@ function startJob(input) {
   };
   jobs.set(id, job);
 
+  const pythonInstalled = fs.existsSync(path.join(pythonDir, "python.exe"));
+  const portablePaths = pythonInstalled
+    ? [nodeDir, npmPrefix, pythonDir, pythonScriptsDir]
+    : [nodeDir, npmPrefix];
   const env = {
     ...process.env,
     CODEX_HOME: codexHome,
     npm_config_prefix: npmPrefix,
     npm_config_cache: npmCache,
-    Path: [nodeDir, npmPrefix, process.env.Path || ""].filter(Boolean).join(";"),
+    Path: [...portablePaths, process.env.Path || ""].filter(Boolean).join(";"),
   };
+  if (pythonInstalled) env.PYTHONHOME = pythonDir;
 
   appendHistory({
     id,
@@ -476,15 +483,21 @@ function startJob(input) {
 
 function openCodexLoginShell() {
   const loginBat = path.join(root, "Login-Codex.bat");
+  const pythonInstalled = fs.existsSync(path.join(pythonDir, "python.exe"));
+  const portablePaths = pythonInstalled
+    ? [nodeDir, npmPrefix, pythonDir, pythonScriptsDir]
+    : [nodeDir, npmPrefix];
+  const env = {
+    ...process.env,
+    CODEX_HOME: codexHome,
+    npm_config_prefix: npmPrefix,
+    npm_config_cache: npmCache,
+    Path: [...portablePaths, process.env.Path || ""].filter(Boolean).join(";"),
+  };
+  if (pythonInstalled) env.PYTHONHOME = pythonDir;
   const child = spawn("cmd.exe", ["/c", "start", "", loginBat], {
     cwd: root,
-    env: {
-      ...process.env,
-      CODEX_HOME: codexHome,
-      npm_config_prefix: npmPrefix,
-      npm_config_cache: npmCache,
-      Path: [nodeDir, npmPrefix, process.env.Path || ""].filter(Boolean).join(";"),
-    },
+    env,
     windowsHide: false,
     stdio: "ignore",
   });

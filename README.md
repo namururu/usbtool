@@ -5,6 +5,7 @@ This folder is meant to be copied to the root of a USB drive and run from PowerS
 It keeps the moving pieces inside the USB folder:
 
 - `tools/node`: portable Node.js for Windows x64
+- `tools/python`: optional portable Python embeddable runtime
 - `tools/npm-global`: npm global packages, including `@openai/codex`
 - `tools/npm-cache`: npm cache
 - `data/codex-home`: Codex config, login/session data, history, and related state
@@ -17,6 +18,12 @@ Open PowerShell in this folder:
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\Install-UsbCodex.ps1
+```
+
+Optional Python runtime:
+
+```powershell
+.\Install-PythonRuntime.ps1
 ```
 
 Then start Codex:
@@ -164,7 +171,7 @@ usb\portable-codex-usb
 
 Options:
 
-- `-IncludeRuntime`: include minimal `node.exe` plus native `codex.exe`
+- `-IncludeRuntime`: include minimal `node.exe`, native `codex.exe`, and `tools\python` when installed
 - `-FullRuntime`: with `-IncludeRuntime`, include full Node/npm and npm-installed Codex CLI instead
 - `-IncludeAuth`: include `data\codex-home` login/session state
 - `-IncludeWorkspaces`: include `workspaces`
