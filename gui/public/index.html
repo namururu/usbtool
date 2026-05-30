@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portable Codex GUI</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="mark">C</div>
+        <div>
+          <h1>Portable Codex</h1>
+          <p>USB Cockpit</p>
+        </div>
+      </div>
+
+      <section class="panel status-panel">
+        <div class="panel-title">状態</div>
+        <dl>
+          <div>
+            <dt>Codex</dt>
+            <dd id="codexState">確認中</dd>
+          </div>
+          <div>
+            <dt>CODEX_HOME</dt>
+            <dd id="codexHome"></dd>
+          </div>
+          <div>
+            <dt>Root</dt>
+            <dd id="rootPath"></dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">履歴</div>
+        <div id="history" class="history"></div>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <h2>Codexと作業する</h2>
+          <p>初回はベース指示、以後は同じセッションへ追投げ。</p>
+        </div>
+        <div class="run-state" id="runState">待機中</div>
+      </header>
+
+      <section class="control-grid">
+        <div class="field span-2">
+          <label for="workspace">作業フォルダ</label>
+          <input id="workspace" type="text" autocomplete="off">
+        </div>
+
+        <div class="field">
+          <label for="model">モデル</label>
+          <input id="model" type="text" placeholder="空欄ならCodex既定">
+        </div>
+
+        <div class="field">
+          <label for="permission">権限</label>
+          <select id="permission">
+            <option value="workspace-write">通常: workspace-write</option>
+            <option value="danger-full-access">攻め: danger-full-access</option>
+            <option value="bypass">全突っ張り: bypass approvals/sandbox</option>
+            <option value="read-only">読むだけ: read-only</option>
+          </select>
+        </div>
+
+        <div class="switch-row span-2">
+          <label class="switch">
+            <input id="resume" type="checkbox" checked>
+            <span>同じセッションに続ける</span>
+          </label>
+          <label class="switch">
+            <input id="japanese" type="checkbox" checked>
+            <span>初回だけ日本語指示を入れる</span>
+          </label>
+          <label class="switch">
+            <input id="autonomous" type="checkbox" checked>
+            <span>初回だけ自律指示を入れる</span>
+          </label>
+        </div>
+
+        <div class="field span-2">
+          <label for="extraInstruction">毎回足す指示</label>
+          <input id="extraInstruction" type="text" value="作業後は変更点と検証結果を簡潔に報告してください。">
+        </div>
+
+      </section>
+
+      <section class="terminal-wrap">
+        <div class="terminal-head">
+          <span>実行ログ</span>
+          <div class="terminal-stats">
+            <code id="tokenState">tokens: -</code>
+            <code id="sessionState">session: none</code>
+          </div>
+        </div>
+        <div class="command-line"><code id="commandPreview"></code></div>
+        <div id="terminal" class="terminal"></div>
+      </section>
+
+      <section class="composer">
+        <div class="field">
+          <label for="prompt">依頼</label>
+          <textarea id="prompt" rows="5" placeholder="例: このリポジトリのテストを通して、失敗している箇所を直して"></textarea>
+        </div>
+        <div class="actions">
+          <button id="loginBtn">ログイン</button>
+          <button id="newSessionBtn">新規セッション</button>
+          <button id="clearBtn">ログ消去</button>
+          <button id="stopBtn" disabled>停止</button>
+          <button id="runBtn" class="primary">送信</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

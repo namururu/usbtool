@@ -1,0 +1,13 @@
+VERSION
+README.md
+Install-UsbCodex.ps1
+Start-Codex.ps1
+Start-CodexGui.ps1
+Stop-CodexGui.ps1
+Update-Codex.ps1
+Update-Self.ps1
+Build-UpdateZip.ps1
+Login-Codex.bat
+start.bat
+update.json
+gui/**

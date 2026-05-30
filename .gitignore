@@ -1,0 +1,14 @@
+# Local state and credentials
+/data/
+/workspaces/
+
+# Portable runtimes and packages
+/tools/
+
+# Build output
+/dist/
+/.tmp/
+
+# Local Windows noise
+Thumbs.db
+Desktop.ini
