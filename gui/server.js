@@ -285,9 +285,12 @@ function isImageMime(type, fileName) {
   return mime.startsWith("image/") || [".png", ".jpg", ".jpeg", ".webp", ".gif"].includes(ext);
 }
 
-function saveUploads(files) {
+function saveUploads(files, workspaceInput) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const batchDir = path.join(uploadsDir, stamp);
+  const archiveDir = path.join(uploadsDir, stamp);
+  const workspace = resolveWorkspace(workspaceInput);
+  const batchDir = path.join(workspace, ".codex-attachments", stamp);
+  fs.mkdirSync(archiveDir, { recursive: true });
   fs.mkdirSync(batchDir, { recursive: true });
 
   return files.map((file, index) => {
@@ -297,10 +300,13 @@ function saveUploads(files) {
     const mime = file.type || match[1];
     const bytes = Buffer.from(match[2], "base64");
     const filePath = path.join(batchDir, name);
+    const archivePath = path.join(archiveDir, name);
     fs.writeFileSync(filePath, bytes);
+    fs.writeFileSync(archivePath, bytes);
     return {
       name,
       path: filePath,
+      archivePath,
       type: mime,
       size: bytes.length,
       image: isImageMime(mime, name),
@@ -323,9 +329,15 @@ function buildPrompt(input, includeBaseInstruction) {
   }
 
   const uploads = Array.isArray(input.uploads) ? input.uploads : [];
+  const imageNotes = uploads
+    .filter((file) => file.image)
+    .map((file) => `- ${file.name}: ${file.path}`);
   const fileNotes = uploads
     .filter((file) => !file.image)
     .map((file) => `- ${file.name}: ${file.path}`);
+  if (imageNotes.length) {
+    prefix.push(`添付画像・スクリーンショット:\n${imageNotes.join("\n")}`);
+  }
   if (fileNotes.length) {
     prefix.push(`添付ファイル:\n${fileNotes.join("\n")}`);
   }
@@ -670,7 +682,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/uploads") {
       const input = JSON.parse(await readBody(req));
       const files = Array.isArray(input.files) ? input.files : [];
-      sendJson(res, 200, { uploads: saveUploads(files) });
+      sendJson(res, 200, { uploads: saveUploads(files, input.workspace) });
       return;
     }
 

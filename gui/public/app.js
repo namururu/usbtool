@@ -240,7 +240,7 @@ async function uploadPendingFiles() {
   const res = await fetch("/api/uploads", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ files: pendingFiles }),
+    body: JSON.stringify({ workspace: el.workspace.value, files: pendingFiles }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || "添付のアップロードに失敗しました。");
@@ -266,6 +266,14 @@ function appendImageCard(image) {
 function appendArtifactCards(artifacts) {
   const images = (artifacts || []).filter((item) => item.image);
   for (const image of images) appendImageCard(image);
+}
+
+function appendUploadPaths(uploads) {
+  if (!uploads?.length) return;
+  appendLine("添付を保存しました:");
+  for (const file of uploads) {
+    appendLine(`- ${file.name}: ${file.path}`);
+  }
 }
 
 async function showLatestGeneratedImage(options = {}) {
@@ -446,6 +454,7 @@ async function runCodex() {
   let uploads = [];
   try {
     uploads = await uploadPendingFiles();
+    appendUploadPaths(uploads);
   } catch (error) {
     appendLine(error.message, "error");
     setRunning(false);

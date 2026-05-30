@@ -59,6 +59,14 @@ foreach ($path in $paths) {
     Remove-PortablePath $path
 }
 
+$WorkspaceRoot = Join-Path $Root "workspaces"
+if (Test-Path $WorkspaceRoot) {
+    Get-ChildItem -LiteralPath $WorkspaceRoot -Directory -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            Remove-PortablePath (Join-Path $_.FullName ".codex-attachments")
+        }
+}
+
 if ($Auth -or $All) {
     Write-Host ""
     Write-Host "Removing Codex auth/session home..."
