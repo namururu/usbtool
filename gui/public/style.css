@@ -240,42 +240,14 @@ textarea:focus {
 }
 
 .history {
-  max-height: 180px;
-  overflow: auto;
-  display: grid;
-  gap: 7px;
-}
-
-.history-item {
-  width: 100%;
-  text-align: left;
-  border: 1px solid var(--line);
-  background: #15181d;
-  color: var(--text);
-  border-radius: 6px;
-  padding: 8px;
-  cursor: pointer;
-}
-
-.history-item:hover {
-  border-color: var(--accent);
-}
-
-.history-item strong,
-.history-item span {
-  display: block;
-}
-
-.history-item strong {
-  color: var(--accent);
-  font-size: 12px;
-}
-
-.history-item span {
+  margin-top: 8px;
   color: var(--muted);
-  max-height: 40px;
-  overflow: hidden;
-  margin-top: 3px;
+  font-size: 13px;
+}
+
+.wide-button {
+  width: 100%;
+  text-align: center;
 }
 
 .empty {

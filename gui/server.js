@@ -132,6 +132,24 @@ function appendHistory(entry) {
   saveJson(historyFile, history.slice(0, 80));
 }
 
+function formatHistoryText() {
+  const history = loadHistory();
+  if (!history.length) return "No history yet.\n";
+
+  return history.map((item, index) => {
+    const lines = [
+      `#${index + 1} ${item.at || ""}`,
+      `workspace: ${item.workspace || ""}`,
+      `permission: ${item.permission || ""}`,
+      `session: ${item.sessionId || ""}`,
+      `mode: ${item.isResume ? "resume" : "new"}`,
+      "",
+      String(item.prompt || "").trim(),
+    ];
+    return lines.join("\n").trimEnd();
+  }).join("\n\n" + "-".repeat(72) + "\n\n") + "\n";
+}
+
 function listWorkspaces() {
   fs.mkdirSync(workspaceRoot, { recursive: true });
   return fs.readdirSync(workspaceRoot, { withFileTypes: true })
@@ -635,6 +653,17 @@ const server = http.createServer(async (req, res) => {
         state: loadState(),
         updateStatus: loadJson(updateStatusFile, null),
       });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/history.txt") {
+      const text = formatHistoryText();
+      res.writeHead(200, {
+        "content-type": "text/plain; charset=utf-8",
+        "content-length": Buffer.byteLength(text),
+        "cache-control": "no-store",
+      });
+      res.end(text);
       return;
     }
 

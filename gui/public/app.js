@@ -4,6 +4,7 @@ const el = {
   rootPath: document.querySelector("#rootPath"),
   updateState: document.querySelector("#updateState"),
   history: document.querySelector("#history"),
+  historyBtn: document.querySelector("#historyBtn"),
   workspace: document.querySelector("#workspace"),
   model: document.querySelector("#model"),
   tokenBudget: document.querySelector("#tokenBudget"),
@@ -316,6 +317,11 @@ function renderHistory(history) {
   }
 }
 
+function renderHistorySummary(history) {
+  const count = Array.isArray(history) ? history.length : 0;
+  el.history.textContent = count ? `${count}件` : "履歴なし";
+}
+
 function stripCodexNoise(text) {
   const lines = String(text).replace(/\r\n/g, "\n").split("\n");
   const kept = [];
@@ -411,7 +417,7 @@ async function refreshStatus() {
   updateTokenLabel(currentRun?.tokensUsed || "");
   statusCache = status;
   updateSessionLabel();
-  renderHistory(status.history || []);
+  renderHistorySummary(status.history || []);
 }
 
 async function runCodex() {
@@ -618,6 +624,7 @@ el.openArtifactsBtn.addEventListener("click", () => openFolder("artifacts"));
 el.openImagesBtn.addEventListener("click", () => openFolder("generatedImages"));
 el.openUploadsBtn.addEventListener("click", () => openFolder("uploads"));
 el.analyticsBtn.addEventListener("click", () => openUrl("analytics"));
+el.historyBtn.addEventListener("click", () => window.open("/api/history.txt", "_blank", "noopener,noreferrer"));
 el.loginBtn.addEventListener("click", openLogin);
 el.runBtn.addEventListener("click", runCodex);
 el.newSessionBtn.addEventListener("click", newSession);
