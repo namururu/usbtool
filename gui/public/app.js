@@ -21,6 +21,7 @@ const el = {
   latestImageBtn: document.querySelector("#latestImageBtn"),
   openImagesBtn: document.querySelector("#openImagesBtn"),
   openUploadsBtn: document.querySelector("#openUploadsBtn"),
+  analyticsBtn: document.querySelector("#analyticsBtn"),
   loginBtn: document.querySelector("#loginBtn"),
   runBtn: document.querySelector("#runBtn"),
   newSessionBtn: document.querySelector("#newSessionBtn"),
@@ -532,6 +533,18 @@ async function openFolder(target) {
   }
 }
 
+async function openUrl(target) {
+  const res = await fetch("/api/open-url", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ target }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    appendLine(body.error || "ページを開けませんでした。", "error");
+  }
+}
+
 async function newSession() {
   await fetch("/api/session/clear", {
     method: "POST",
@@ -548,6 +561,7 @@ el.screenshotBtn.addEventListener("click", () => captureScreenshot().catch((erro
 el.latestImageBtn.addEventListener("click", () => showLatestGeneratedImage({ allowExisting: true, baseline: 0, notice: true }).catch((error) => appendLine(error.message, "error")));
 el.openImagesBtn.addEventListener("click", () => openFolder("generatedImages"));
 el.openUploadsBtn.addEventListener("click", () => openFolder("uploads"));
+el.analyticsBtn.addEventListener("click", () => openUrl("analytics"));
 el.loginBtn.addEventListener("click", openLogin);
 el.runBtn.addEventListener("click", runCodex);
 el.newSessionBtn.addEventListener("click", newSession);

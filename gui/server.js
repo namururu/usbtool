@@ -420,6 +420,19 @@ function openFolder(target) {
   child.unref();
 }
 
+function openExternalUrl(target) {
+  const known = {
+    analytics: "https://chatgpt.com/codex/cloud/settings/analytics",
+  };
+  const url = known[target];
+  if (!url) throw new Error("Unknown URL target.");
+  const child = spawn("cmd.exe", ["/c", "start", "", url], {
+    windowsHide: false,
+    stdio: "ignore",
+  });
+  child.unref();
+}
+
 function serveStatic(req, res) {
   const url = new URL(req.url, "http://127.0.0.1");
   const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
@@ -543,6 +556,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/open-folder") {
       const input = JSON.parse(await readBody(req));
       openFolder(input.target);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/open-url") {
+      const input = JSON.parse(await readBody(req));
+      openExternalUrl(input.target);
       sendJson(res, 200, { ok: true });
       return;
     }
