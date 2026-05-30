@@ -159,7 +159,7 @@ For a clean USB copy, do not copy the development folder directly. Build a carry
 Output:
 
 ```text
-dist\carry\portable-codex-usb
+usb\portable-codex-usb
 ```
 
 Options:

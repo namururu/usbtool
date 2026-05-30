@@ -1,5 +1,5 @@
 param(
-    [string]$OutputDir = "dist\carry",
+    [string]$OutputDir = "usb",
     [switch]$IncludeRuntime,
     [switch]$FullRuntime,
     [switch]$IncludeAuth,
