@@ -23,6 +23,11 @@ function Add-PathFirst {
 
 New-Item -ItemType Directory -Force -Path $CodexHome, $DefaultWorkspace, $NpmCache | Out-Null
 
+$StatusLineScript = Join-Path $Root "Set-CodexStatusLine.ps1"
+if (Test-Path $StatusLineScript) {
+    & $StatusLineScript -Quiet
+}
+
 Add-PathFirst $NodeDir
 Add-PathFirst $NpmPrefix
 if (Test-Path (Join-Path $PythonDir "python.exe")) {

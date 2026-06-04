@@ -111,6 +111,8 @@ if (-not (Test-Path (Join-Path $CodexHome "config.toml"))) {
 "@ | Set-Content -Path (Join-Path $CodexHome "config.toml") -Encoding UTF8
 }
 
+& (Join-Path $Root "Set-CodexStatusLine.ps1")
+
 Write-Host ""
 Write-Host "Portable Codex is ready."
 Write-Host "Next:"

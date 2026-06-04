@@ -41,6 +41,16 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\Start-Codex.ps1
 ```
 
+## CLI Status Line
+
+The Codex TUI status bar can show context, 5-hour, and weekly limits. Setup enables this automatically, and you can reapply it any time:
+
+```powershell
+.\Set-CodexStatusLine.ps1
+```
+
+This writes `[tui] status_line` to `data\codex-home\config.toml`. It affects the interactive CLI/TUI opened by `.\Start-Codex.ps1`; the local GUI uses `codex exec`, so it does not receive the TUI status bar directly.
+
 ## Local GUI
 
 The experimental portable GUI runs a localhost-only web cockpit that calls the USB Codex CLI.

@@ -2,6 +2,7 @@ VERSION
 README.md
 Install-UsbCodex.ps1
 Install-PythonRuntime.ps1
+Set-CodexStatusLine.ps1
 Start-Codex.ps1
 Start-CodexGui.ps1
 Stop-CodexGui.ps1
