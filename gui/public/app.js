@@ -51,6 +51,7 @@ let seenEventIds = new Set();
 let streamFinished = false;
 let runAbortController = null;
 const settingsKey = "portableCodexGuiSettings";
+const imageSessionKey = "portableCodexImageSession";
 
 function isAuthErrorText(text) {
   return /(401 Unauthorized|Missing bearer|authentication|ログイン|login)/i.test(String(text || ""));
@@ -68,12 +69,56 @@ function looksLikeImageGenerationPrompt(text) {
   return /(描いて|描画|画像生成|イラスト|絵を|絵描|作画|生成して|image generation|generate an image|draw|illustration)/i.test(String(text || ""));
 }
 
+function looksLikeImageFollowupPrompt(text) {
+  return /(文字|テキスト|入れて|載せて|追加|修正|編集|変えて|さっき|直前|この画像|これに|edit|add text|caption|modify)/i.test(String(text || ""));
+}
+
 function modelForRequest(prompt) {
   const selected = el.model.value;
   if (selected === "gpt-5.3-codex-spark" && looksLikeImageGenerationPrompt(prompt)) {
     return "gpt-5.5";
   }
   return selected;
+}
+
+function readImageSession() {
+  try {
+    return JSON.parse(localStorage.getItem(imageSessionKey) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function writeImageSession(image) {
+  if (!image?.path) return;
+  localStorage.setItem(imageSessionKey, JSON.stringify({
+    workspace: el.workspace.value,
+    name: image.name,
+    path: image.path,
+    mtimeMs: image.mtimeMs,
+  }));
+}
+
+function clearImageSession() {
+  localStorage.removeItem(imageSessionKey);
+}
+
+function latestImageForFollowup(prompt) {
+  const image = readImageSession();
+  if (!image?.path) return null;
+  if (!isCurrentWorkspaceImageSession(image)) return null;
+  if (!looksLikeImageFollowupPrompt(prompt)) return null;
+  return {
+    name: image.name || "latest-generated-image",
+    path: image.path,
+    image: true,
+    autoAttached: true,
+  };
+}
+
+function isCurrentWorkspaceImageSession(image = readImageSession()) {
+  if (!image?.path) return false;
+  return !image.workspace || image.workspace === el.workspace.value;
 }
 
 async function clearCurrentSessionQuietly() {
@@ -356,6 +401,7 @@ async function uploadPendingFiles() {
 function appendImageCard(image) {
   const marker = `[image:${image.name}]`;
   if (el.terminal.textContent.includes(marker)) return;
+  writeImageSession(image);
   const url = `${image.url}?t=${Math.round(image.mtimeMs)}`;
   append(`\n${marker}\n`);
   el.terminal.insertAdjacentHTML("beforeend", `
@@ -582,8 +628,17 @@ async function runCodex() {
   }
 
   const permission = el.bypass.checked ? "bypass" : el.permission.value;
+  const followupImage = pendingFiles.length ? null : latestImageForFollowup(prompt);
   const hasImageAttachment = pendingFiles.some((file) => String(file.type || "").startsWith("image/"));
-  const forceNewForImage = el.resume.checked && (looksLikeImagePrompt(prompt) || hasImageAttachment);
+  const hasAutoImageAttachment = Boolean(followupImage);
+  const hasPreviousImageSession = isCurrentWorkspaceImageSession();
+  const forceNewForImage = el.resume.checked && (
+    looksLikeImagePrompt(prompt)
+    || looksLikeImageFollowupPrompt(prompt)
+    || hasImageAttachment
+    || hasAutoImageAttachment
+    || hasPreviousImageSession
+  );
   const effectiveModel = modelForRequest(prompt);
   setRunning(true);
   el.commandPreview.textContent = "";
@@ -605,7 +660,8 @@ async function runCodex() {
   let uploads = [];
   try {
     uploads = await uploadPendingFiles();
-    appendUploadPaths(uploads);
+    if (followupImage) uploads.push(followupImage);
+    appendUploadPaths(uploads.filter((file) => !file.autoAttached));
   } catch (error) {
     appendLine(error.message, "error");
     setRunning(false);
@@ -613,6 +669,9 @@ async function runCodex() {
     return;
   }
   appendUserMessage(prompt, uploads);
+  if (followupImage) {
+    appendLine(`直近の生成画像を自動添付しました: ${followupImage.path}`, "system");
+  }
   if (effectiveModel !== el.model.value) {
     appendLine(`画像生成のため、この実行だけ ${effectiveModel} で送信します。`, "system");
   }
@@ -738,6 +797,7 @@ async function runCodex() {
         baseline: currentRun.imageBaselineMtime ?? latestImageMtime,
         notice: true,
       }).catch(() => {});
+      await clearCurrentSessionQuietly();
     }
     stream.close();
     stream = null;
@@ -821,6 +881,7 @@ async function openUrl(target) {
 }
 
 async function newSession() {
+  clearImageSession();
   await fetch("/api/session/clear", {
     method: "POST",
     headers: { "content-type": "application/json" },
