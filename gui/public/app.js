@@ -202,16 +202,29 @@ function formatRateLimitBucket(bucket, key = "") {
   return `${name} ${primary} ${secondary}`;
 }
 
+function setRateLimitLines(lines) {
+  const allLines = (Array.isArray(lines) ? lines : [lines]).filter(Boolean);
+  const visibleLines = allLines.length <= 2
+    ? allLines
+    : [allLines[0], allLines.slice(1).join(" | ")];
+  el.rateLimitState.innerHTML = "";
+  for (const line of visibleLines) {
+    const item = document.createElement("span");
+    item.textContent = line;
+    el.rateLimitState.append(item);
+  }
+}
+
 function updateRateLimitLabel(payload) {
   if (!payload) {
-    el.rateLimitState.textContent = "usage: -";
+    setRateLimitLines("usage: -");
     return;
   }
   if (!payload.ok) {
     const message = String(payload.error || "");
-    el.rateLimitState.textContent = /auth|login|authentication/i.test(message)
+    setRateLimitLines(/auth|login|authentication/i.test(message)
       ? "usage: login required"
-      : "usage: unavailable";
+      : "usage: unavailable");
     return;
   }
   const buckets = payload.rateLimits?.rateLimitsByLimitId;
@@ -219,12 +232,10 @@ function updateRateLimitLabel(payload) {
     ? Object.entries(buckets).filter(([, value]) => value)
     : [];
   if (bucketEntries.length) {
-    el.rateLimitState.textContent = bucketEntries
-      .map(([key, value]) => formatRateLimitBucket(value, key))
-      .join(" | ");
+    setRateLimitLines(bucketEntries.map(([key, value]) => formatRateLimitBucket(value, key)));
     return;
   }
-  el.rateLimitState.textContent = formatRateLimitBucket(payload.rateLimits?.rateLimits, "usage");
+  setRateLimitLines(formatRateLimitBucket(payload.rateLimits?.rateLimits, "usage"));
 }
 
 function readSettings() {

@@ -118,11 +118,17 @@ h1 {
 #rateLimitState {
   max-width: min(58vw, 720px);
   color: var(--accent-2);
+  display: grid;
+  gap: 2px;
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
   overflow-wrap: anywhere;
   line-height: 1.25;
+}
+
+#rateLimitState span {
+  display: block;
 }
 
 .run-state {
