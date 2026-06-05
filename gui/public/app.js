@@ -7,6 +7,7 @@ const el = {
   historyBtn: document.querySelector("#historyBtn"),
   workspace: document.querySelector("#workspace"),
   model: document.querySelector("#model"),
+  activeModel: document.querySelector("#activeModel"),
   tokenBudget: document.querySelector("#tokenBudget"),
   permission: document.querySelector("#permission"),
   bypass: document.querySelector("#bypass"),
@@ -134,29 +135,15 @@ function getResetMs(window) {
   return window.resetsAt > 10_000_000_000 ? window.resetsAt : window.resetsAt * 1000;
 }
 
-function formatDurationUntil(ms) {
-  const diff = ms - Date.now();
-  if (!Number.isFinite(diff)) return "";
-  if (diff <= 0) return "更新待ち";
-  const minutes = Math.ceil(diff / 60_000);
-  if (minutes < 60) return `あと${minutes}分`;
-  const hours = Math.floor(minutes / 60);
-  const restMinutes = minutes % 60;
-  if (hours < 48) return restMinutes ? `あと${hours}時間${restMinutes}分` : `あと${hours}時間`;
-  const days = Math.floor(hours / 24);
-  const restHours = hours % 24;
-  return restHours ? `あと${days}日${restHours}時間` : `あと${days}日`;
-}
-
 function formatResetLabel(window) {
   const resetMs = getResetMs(window);
   if (!resetMs) return "";
   const reset = new Date(resetMs);
   const sameDay = reset.toDateString() === new Date().toDateString();
   const date = sameDay
-    ? reset.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })
-    : reset.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  return `更新 ${date}(${formatDurationUntil(resetMs)})`;
+    ? reset.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", hour12: false })
+    : reset.toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+  return `更新 ${date}`;
 }
 
 function formatRateLimitBucket(bucket, key = "") {
@@ -219,6 +206,20 @@ function writeSettings() {
   localStorage.setItem(settingsKey, JSON.stringify(settings));
 }
 
+function syncActiveModelFromSettings() {
+  if (!el.activeModel) return;
+  if (!el.activeModel.options.length) {
+    el.activeModel.innerHTML = el.model.innerHTML;
+  }
+  el.activeModel.value = el.model.value;
+}
+
+function setModel(value) {
+  el.model.value = value;
+  syncActiveModelFromSettings();
+  writeSettings();
+}
+
 function applySettings(settings) {
   if (settings.workspace) el.workspace.value = settings.workspace;
   if (settings.model !== undefined) el.model.value = settings.model;
@@ -230,6 +231,7 @@ function applySettings(settings) {
   if (settings.japanese !== undefined) el.japanese.checked = Boolean(settings.japanese);
   if (settings.autonomous !== undefined) el.autonomous.checked = Boolean(settings.autonomous);
   if (settings.extraInstruction !== undefined) el.extraInstruction.value = settings.extraInstruction;
+  syncActiveModelFromSettings();
 }
 
 function append(text, kind = "") {
@@ -852,7 +854,9 @@ el.tokenBudget.addEventListener("change", () => {
   writeSettings();
   updateTokenLabel(currentRun?.tokensUsed || "");
 });
-for (const item of [el.model, el.permission, el.bypass, el.enterToSend, el.resume, el.japanese, el.autonomous, el.extraInstruction]) {
+el.model.addEventListener("change", () => setModel(el.model.value));
+el.activeModel.addEventListener("change", () => setModel(el.activeModel.value));
+for (const item of [el.permission, el.bypass, el.enterToSend, el.resume, el.japanese, el.autonomous, el.extraInstruction]) {
   item.addEventListener("change", writeSettings);
 }
 

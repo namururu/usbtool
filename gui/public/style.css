@@ -74,6 +74,24 @@ h1 {
   line-height: 1.1;
 }
 
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+#activeModel {
+  width: 178px;
+  min-height: 26px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--accent-2);
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
 .brand p {
   color: var(--muted);
   font-size: 12px;
