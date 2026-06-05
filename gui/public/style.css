@@ -95,6 +95,11 @@ h1 {
   white-space: nowrap;
 }
 
+#rateLimitState {
+  max-width: min(58vw, 720px);
+  color: var(--accent-2);
+}
+
 .run-state {
   border: 1px solid var(--line);
   color: var(--muted);

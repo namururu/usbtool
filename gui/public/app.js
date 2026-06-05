@@ -36,6 +36,7 @@ const el = {
   commandPreview: document.querySelector("#commandPreview"),
   sessionState: document.querySelector("#sessionState"),
   tokenState: document.querySelector("#tokenState"),
+  rateLimitState: document.querySelector("#rateLimitState"),
 };
 
 let currentJob = null;
@@ -102,6 +103,60 @@ function updateTokenLabel(value) {
   }
   const remaining = Math.max(0, budget - used);
   el.tokenState.textContent = `tokens: ${used.toLocaleString()} / 残 ${remaining.toLocaleString()}`;
+}
+
+function formatLimitWindow(window, fallbackLabel) {
+  if (!window) return `${fallbackLabel}: -`;
+  const used = Number(window.usedPercent);
+  const remaining = Number.isFinite(used) ? Math.max(0, 100 - used) : null;
+  const label = window.windowDurationMins && window.windowDurationMins <= 360
+    ? "5h"
+    : (window.windowDurationMins && window.windowDurationMins >= 1000 ? "week" : fallbackLabel);
+  const percent = remaining === null ? "-" : `${Math.round(remaining)}%`;
+  return `${label}: ${percent}`;
+}
+
+function formatResetTime(window) {
+  if (!window?.resetsAt) return "";
+  const resetMs = window.resetsAt > 10_000_000_000 ? window.resetsAt : window.resetsAt * 1000;
+  return new Date(resetMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatRateLimitBucket(bucket, key = "") {
+  const rawName = bucket?.limitName || bucket?.limitId || key || "usage";
+  const lowerName = String(rawName).toLowerCase();
+  const name = lowerName.includes("spark") || lowerName.includes("sparc")
+    ? "Spark"
+    : (lowerName.includes("5.5") || lowerName.includes("5_5") || lowerName.includes("gpt-5") ? "5.5" : rawName);
+  const primary = formatLimitWindow(bucket?.primary, "primary");
+  const secondary = formatLimitWindow(bucket?.secondary, "week");
+  const resets = [formatResetTime(bucket?.primary), formatResetTime(bucket?.secondary)].filter(Boolean);
+  return `${name} ${primary} ${secondary}${resets.length ? ` reset ${resets.join("/")}` : ""}`;
+}
+
+function updateRateLimitLabel(payload) {
+  if (!payload) {
+    el.rateLimitState.textContent = "usage: -";
+    return;
+  }
+  if (!payload.ok) {
+    const message = String(payload.error || "");
+    el.rateLimitState.textContent = /auth|login|authentication/i.test(message)
+      ? "usage: login required"
+      : "usage: unavailable";
+    return;
+  }
+  const buckets = payload.rateLimits?.rateLimitsByLimitId;
+  const bucketEntries = buckets && typeof buckets === "object"
+    ? Object.entries(buckets).filter(([, value]) => value)
+    : [];
+  if (bucketEntries.length) {
+    el.rateLimitState.textContent = bucketEntries
+      .map(([key, value]) => formatRateLimitBucket(value, key))
+      .join(" | ");
+    return;
+  }
+  el.rateLimitState.textContent = formatRateLimitBucket(payload.rateLimits?.rateLimits, "usage");
 }
 
 function readSettings() {
@@ -468,9 +523,16 @@ async function refreshStatus() {
   if (!el.workspace.value) el.workspace.value = status.workspaceRoot;
   latestImageMtime = status.generatedImages?.[0]?.mtimeMs || 0;
   updateTokenLabel(currentRun?.tokensUsed || "");
+  updateRateLimitLabel(status.rateLimits);
   statusCache = status;
   updateSessionLabel();
   renderHistorySummary(status.history || []);
+}
+
+async function refreshRateLimits(force = false) {
+  const res = await fetch(`/api/rate-limits${force ? "?refresh=1" : ""}`);
+  const payload = await res.json();
+  updateRateLimitLabel(payload);
 }
 
 async function runCodex() {
@@ -781,3 +843,7 @@ refreshStatus().catch((error) => {
   el.codexState.textContent = "エラー";
   appendLine(error.message, "error");
 });
+refreshRateLimits(true).catch(() => {});
+setInterval(() => {
+  refreshRateLimits(false).catch(() => {});
+}, 60_000);

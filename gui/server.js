@@ -24,11 +24,14 @@ const npmCache = path.join(root, "tools", "npm-cache");
 const historyFile = path.join(dataDir, "gui-history.json");
 const stateFile = path.join(dataDir, "gui-state.json");
 const updateStatusFile = path.join(dataDir, "update-status.json");
+const rateLimitCacheMs = 60_000;
 
 const args = process.argv.slice(2);
 const portArgIndex = args.indexOf("--port");
 const port = portArgIndex >= 0 ? Number(args[portArgIndex + 1]) : Number(process.env.PORT || 41731);
 const jobs = new Map();
+let rateLimitCache = { at: 0, value: null };
+let rateLimitPending = null;
 
 function ensureDirs() {
   for (const dir of [workspaceRoot, codexHome, npmCache, uploadsDir, artifactsDir]) {
@@ -352,6 +355,122 @@ function addSharedCodexOptions(codexArgs, input) {
   return permission;
 }
 
+function getCodexRunnerForAppServer() {
+  if (fs.existsSync(portableCodexExe)) {
+    return { command: portableCodexExe, args: ["app-server", "--listen", "stdio://"] };
+  }
+  if (fs.existsSync(codexJs) && fs.existsSync(nodeExe)) {
+    return { command: nodeExe, args: [codexJs, "app-server", "--listen", "stdio://"] };
+  }
+  return null;
+}
+
+function getPortableEnv() {
+  const pythonInstalled = fs.existsSync(path.join(pythonDir, "python.exe"));
+  const portablePaths = pythonInstalled
+    ? [nodeDir, npmPrefix, pythonDir, pythonScriptsDir]
+    : [nodeDir, npmPrefix];
+  const env = {
+    ...process.env,
+    CODEX_HOME: codexHome,
+    npm_config_prefix: npmPrefix,
+    npm_config_cache: npmCache,
+    Path: [...portablePaths, process.env.Path || ""].filter(Boolean).join(";"),
+  };
+  if (pythonInstalled) env.PYTHONHOME = pythonDir;
+  return env;
+}
+
+function readCodexRateLimits() {
+  const runner = getCodexRunnerForAppServer();
+  if (!runner) {
+    return Promise.resolve({ ok: false, error: "Codex CLI is not installed.", rateLimits: null });
+  }
+
+  return new Promise((resolve) => {
+    const child = spawn(runner.command, runner.args, {
+      cwd: root,
+      env: getPortableEnv(),
+      windowsHide: true,
+      shell: false,
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+    let buffer = "";
+    let settled = false;
+
+    function finish(value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.kill();
+      resolve(value);
+    }
+
+    function send(payload) {
+      child.stdin.write(`${JSON.stringify(payload)}\n`);
+    }
+
+    const timer = setTimeout(() => {
+      finish({ ok: false, error: "Timed out while reading Codex rate limits.", rateLimits: null });
+    }, 12_000);
+
+    child.on("error", (error) => {
+      finish({ ok: false, error: error.message, rateLimits: null });
+    });
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk.toString();
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        let message;
+        try {
+          message = JSON.parse(trimmed);
+        } catch {
+          continue;
+        }
+        if (message.id === 1 && message.result) {
+          send({ id: 2, method: "account/rateLimits/read" });
+        } else if (message.id === 2) {
+          if (message.result) {
+            finish({ ok: true, error: null, rateLimits: message.result, fetchedAt: new Date().toISOString() });
+          } else {
+            finish({ ok: false, error: message.error?.message || "Failed to read Codex rate limits.", rateLimits: null });
+          }
+        }
+      }
+    });
+
+    send({
+      id: 1,
+      method: "initialize",
+      params: {
+        clientInfo: { name: "portable-codex-gui", title: "Portable Codex GUI", version: "0.1.0" },
+        capabilities: { experimentalApi: true, requestAttestation: false, optOutNotificationMethods: [] },
+      },
+    });
+  });
+}
+
+async function getCachedRateLimits(force = false) {
+  const now = Date.now();
+  if (!force && rateLimitCache.value && now - rateLimitCache.at < rateLimitCacheMs) {
+    return rateLimitCache.value;
+  }
+  if (!rateLimitPending) {
+    rateLimitPending = readCodexRateLimits()
+      .then((value) => {
+        rateLimitCache = { at: Date.now(), value };
+        return value;
+      })
+      .finally(() => {
+        rateLimitPending = null;
+      });
+  }
+  return rateLimitPending;
+}
+
 function buildCodexArgs(input, workspace, prompt, session) {
   const isResume = Boolean(session?.id && input.resume !== false);
   const codexArgs = isResume
@@ -666,7 +785,13 @@ const server = http.createServer(async (req, res) => {
         history: loadHistory(),
         state: loadState(),
         updateStatus: loadJson(updateStatusFile, null),
+        rateLimits: rateLimitCache.value,
       });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/rate-limits") {
+      sendJson(res, 200, await getCachedRateLimits(url.searchParams.get("refresh") === "1"));
       return;
     }
 
