@@ -83,6 +83,8 @@ h1 {
 .top-status {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
   min-width: 0;
 }
@@ -98,6 +100,11 @@ h1 {
 #rateLimitState {
   max-width: min(58vw, 720px);
   color: var(--accent-2);
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
 }
 
 .run-state {
