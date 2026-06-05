@@ -63,6 +63,18 @@ function looksLikeImagePrompt(text) {
   return /(描いて|画像|イラスト|絵|生成|image|illustration|draw)/i.test(String(text || ""));
 }
 
+function looksLikeImageGenerationPrompt(text) {
+  return /(描いて|描画|画像生成|イラスト|絵を|絵描|作画|生成して|image generation|generate an image|draw|illustration)/i.test(String(text || ""));
+}
+
+function modelForRequest(prompt) {
+  const selected = el.model.value;
+  if (selected === "gpt-5.3-codex-spark" && looksLikeImageGenerationPrompt(prompt)) {
+    return "gpt-5.5";
+  }
+  return selected;
+}
+
 async function clearCurrentSessionQuietly() {
   await fetch("/api/session/clear", {
     method: "POST",
@@ -112,14 +124,39 @@ function formatLimitWindow(window, fallbackLabel) {
   const label = window.windowDurationMins && window.windowDurationMins <= 360
     ? "5h"
     : (window.windowDurationMins && window.windowDurationMins >= 1000 ? "week" : fallbackLabel);
-  const percent = remaining === null ? "-" : `${Math.round(remaining)}%`;
-  return `${label}: ${percent}`;
+  const percent = remaining === null ? "-" : `残${Math.round(remaining)}%`;
+  const reset = formatResetLabel(window);
+  return `${label}: ${percent}${reset ? ` ${reset}` : ""}`;
 }
 
-function formatResetTime(window) {
+function getResetMs(window) {
   if (!window?.resetsAt) return "";
-  const resetMs = window.resetsAt > 10_000_000_000 ? window.resetsAt : window.resetsAt * 1000;
-  return new Date(resetMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return window.resetsAt > 10_000_000_000 ? window.resetsAt : window.resetsAt * 1000;
+}
+
+function formatDurationUntil(ms) {
+  const diff = ms - Date.now();
+  if (!Number.isFinite(diff)) return "";
+  if (diff <= 0) return "更新待ち";
+  const minutes = Math.ceil(diff / 60_000);
+  if (minutes < 60) return `あと${minutes}分`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  if (hours < 48) return restMinutes ? `あと${hours}時間${restMinutes}分` : `あと${hours}時間`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `あと${days}日${restHours}時間` : `あと${days}日`;
+}
+
+function formatResetLabel(window) {
+  const resetMs = getResetMs(window);
+  if (!resetMs) return "";
+  const reset = new Date(resetMs);
+  const sameDay = reset.toDateString() === new Date().toDateString();
+  const date = sameDay
+    ? reset.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })
+    : reset.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return `更新 ${date}(${formatDurationUntil(resetMs)})`;
 }
 
 function formatRateLimitBucket(bucket, key = "") {
@@ -130,8 +167,7 @@ function formatRateLimitBucket(bucket, key = "") {
     : (lowerName.includes("5.5") || lowerName.includes("5_5") || lowerName.includes("gpt-5") ? "5.5" : rawName);
   const primary = formatLimitWindow(bucket?.primary, "primary");
   const secondary = formatLimitWindow(bucket?.secondary, "week");
-  const resets = [formatResetTime(bucket?.primary), formatResetTime(bucket?.secondary)].filter(Boolean);
-  return `${name} ${primary} ${secondary}${resets.length ? ` reset ${resets.join("/")}` : ""}`;
+  return `${name} ${primary} ${secondary}`;
 }
 
 function updateRateLimitLabel(payload) {
@@ -546,6 +582,7 @@ async function runCodex() {
   const permission = el.bypass.checked ? "bypass" : el.permission.value;
   const hasImageAttachment = pendingFiles.some((file) => String(file.type || "").startsWith("image/"));
   const forceNewForImage = el.resume.checked && (looksLikeImagePrompt(prompt) || hasImageAttachment);
+  const effectiveModel = modelForRequest(prompt);
   setRunning(true);
   el.commandPreview.textContent = "";
   currentRun = {
@@ -574,10 +611,13 @@ async function runCodex() {
     return;
   }
   appendUserMessage(prompt, uploads);
+  if (effectiveModel !== el.model.value) {
+    appendLine(`画像生成のため、この実行だけ ${effectiveModel} で送信します。`, "system");
+  }
 
   const payload = {
     workspace: el.workspace.value,
-    model: el.model.value,
+    model: effectiveModel,
     permission,
     resume: forceNewForImage ? false : el.resume.checked,
     japanese: el.japanese.checked,
