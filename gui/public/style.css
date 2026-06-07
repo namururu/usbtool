@@ -490,6 +490,11 @@ button.primary {
   font-weight: 700;
 }
 
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .image-card {
   display: inline-grid;
   gap: 8px;

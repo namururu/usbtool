@@ -50,6 +50,7 @@ let thinkingTimer = null;
 let seenEventIds = new Set();
 let streamFinished = false;
 let runAbortController = null;
+let loggedIn = false;
 const settingsKey = "portableCodexGuiSettings";
 const imageSessionKey = "portableCodexImageSession";
 
@@ -163,6 +164,12 @@ function updateTokenLabel(value) {
   el.tokenState.textContent = `tokens: ${used.toLocaleString()} / 残 ${remaining.toLocaleString()}`;
 }
 
+function updateLoginButton(value = loggedIn) {
+  loggedIn = Boolean(value);
+  el.loginBtn.textContent = loggedIn ? "ログアウト" : "ログイン";
+  el.loginBtn.classList.toggle("danger", loggedIn);
+}
+
 function formatLimitWindow(window, fallbackLabel) {
   if (!window) return `${fallbackLabel}: -`;
   const used = Number(window.usedPercent);
@@ -222,11 +229,13 @@ function updateRateLimitLabel(payload) {
   }
   if (!payload.ok) {
     const message = String(payload.error || "");
+    if (/auth|login|authentication/i.test(message)) updateLoginButton(false);
     setRateLimitLines(/auth|login|authentication/i.test(message)
       ? "usage: login required"
       : "usage: unavailable");
     return;
   }
+  updateLoginButton(true);
   const buckets = payload.rateLimits?.rateLimitsByLimitId;
   const bucketEntries = buckets && typeof buckets === "object"
     ? Object.entries(buckets).filter(([, value]) => value)
@@ -618,6 +627,7 @@ async function refreshStatus() {
   if (!el.workspace.value) el.workspace.value = status.workspaceRoot;
   latestImageMtime = status.generatedImages?.[0]?.mtimeMs || 0;
   updateTokenLabel(currentRun?.tokensUsed || "");
+  if (status.auth?.checked) updateLoginButton(status.auth.loggedIn);
   updateRateLimitLabel(status.rateLimits);
   statusCache = status;
   updateSessionLabel();
@@ -867,6 +877,32 @@ async function openLogin() {
   else appendLine("ログイン起動に失敗しました。", "error");
 }
 
+async function logoutCodex() {
+  el.loginBtn.disabled = true;
+  try {
+    const res = await fetch("/api/logout", { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      appendLine(body.error || "ログアウトに失敗しました。", "error");
+      return;
+    }
+    updateLoginButton(false);
+    setRateLimitLines("usage: login required");
+    appendLine("ログアウトしました。", "system");
+    await refreshStatus().catch(() => {});
+  } finally {
+    el.loginBtn.disabled = false;
+  }
+}
+
+async function handleLoginButton() {
+  if (loggedIn) {
+    await logoutCodex();
+  } else {
+    await openLogin();
+  }
+}
+
 async function openFolder(target) {
   const res = await fetch("/api/open-folder", {
     method: "POST",
@@ -911,7 +947,7 @@ el.openImagesBtn.addEventListener("click", () => openFolder("generatedImages"));
 el.openUploadsBtn.addEventListener("click", () => openFolder("uploads"));
 el.analyticsBtn.addEventListener("click", () => openUrl("analytics"));
 el.historyBtn.addEventListener("click", () => window.open("/api/history.txt", "_blank", "noopener,noreferrer"));
-el.loginBtn.addEventListener("click", openLogin);
+el.loginBtn.addEventListener("click", handleLoginButton);
 el.runBtn.addEventListener("click", runCodex);
 el.newSessionBtn.addEventListener("click", newSession);
 el.stopBtn.addEventListener("click", stopCodex);

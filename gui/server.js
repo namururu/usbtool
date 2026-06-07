@@ -129,6 +129,12 @@ function clearCurrentSession(workspace) {
   saveState(state);
 }
 
+function clearAllSessions() {
+  const state = loadState();
+  state.sessions = {};
+  saveState(state);
+}
+
 function appendHistory(entry) {
   const history = loadHistory();
   history.unshift(entry);
@@ -366,18 +372,7 @@ function getCodexRunnerForAppServer() {
 }
 
 function getPortableEnv() {
-  const pythonInstalled = fs.existsSync(path.join(pythonDir, "python.exe"));
-  const portablePaths = pythonInstalled
-    ? [nodeDir, npmPrefix, pythonDir, pythonScriptsDir]
-    : [nodeDir, npmPrefix];
-  const env = {
-    ...process.env,
-    CODEX_HOME: codexHome,
-    npm_config_prefix: npmPrefix,
-    npm_config_cache: npmCache,
-    Path: [...portablePaths, process.env.Path || ""].filter(Boolean).join(";"),
-  };
-  if (pythonInstalled) env.PYTHONHOME = pythonDir;
+  const env = buildPortableEnv();
   return env;
 }
 
@@ -469,6 +464,22 @@ async function getCachedRateLimits(force = false) {
       });
   }
   return rateLimitPending;
+}
+
+function buildPortableEnv() {
+  const pythonInstalled = fs.existsSync(path.join(pythonDir, "python.exe"));
+  const portablePaths = pythonInstalled
+    ? [nodeDir, npmPrefix, pythonDir, pythonScriptsDir]
+    : [nodeDir, npmPrefix];
+  const env = {
+    ...process.env,
+    CODEX_HOME: codexHome,
+    npm_config_prefix: npmPrefix,
+    npm_config_cache: npmCache,
+    Path: [...portablePaths, process.env.Path || ""].filter(Boolean).join(";"),
+  };
+  if (pythonInstalled) env.PYTHONHOME = pythonDir;
+  return env;
 }
 
 function buildCodexArgs(input, workspace, prompt, session) {
@@ -634,18 +645,7 @@ function startJob(input) {
 
 function openCodexLoginShell() {
   const loginBat = path.join(root, "Login-Codex.bat");
-  const pythonInstalled = fs.existsSync(path.join(pythonDir, "python.exe"));
-  const portablePaths = pythonInstalled
-    ? [nodeDir, npmPrefix, pythonDir, pythonScriptsDir]
-    : [nodeDir, npmPrefix];
-  const env = {
-    ...process.env,
-    CODEX_HOME: codexHome,
-    npm_config_prefix: npmPrefix,
-    npm_config_cache: npmCache,
-    Path: [...portablePaths, process.env.Path || ""].filter(Boolean).join(";"),
-  };
-  if (pythonInstalled) env.PYTHONHOME = pythonDir;
+  const env = buildPortableEnv();
   const child = spawn("cmd.exe", ["/c", "start", "", loginBat], {
     cwd: root,
     env,
@@ -653,6 +653,37 @@ function openCodexLoginShell() {
     stdio: "ignore",
   });
   child.unref();
+}
+
+function runCodexLogout() {
+  const env = buildPortableEnv();
+  let result;
+  if (fs.existsSync(portableCodexExe)) {
+    result = spawnSync(portableCodexExe, ["logout"], {
+      cwd: root,
+      env,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+  } else if (fs.existsSync(codexCmd)) {
+    result = spawnSync("cmd.exe", ["/c", codexCmd, "logout"], {
+      cwd: root,
+      env,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+  } else {
+    throw new Error("Codex CLIが見つかりません。ログアウトできませんでした。");
+  }
+
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    const message = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
+    throw new Error(message || "Codex CLIのログアウトに失敗しました。");
+  }
+
+  rateLimitCache = { at: 0, value: null };
+  clearAllSessions();
 }
 
 function openFolder(target) {
@@ -786,6 +817,10 @@ const server = http.createServer(async (req, res) => {
         state: loadState(),
         updateStatus: loadJson(updateStatusFile, null),
         rateLimits: rateLimitCache.value,
+        auth: {
+          checked: Boolean(rateLimitCache.value),
+          loggedIn: rateLimitCache.value?.ok === true,
+        },
       });
       return;
     }
@@ -849,6 +884,12 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/login") {
       openCodexLoginShell();
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/logout") {
+      runCodexLogout();
       sendJson(res, 200, { ok: true });
       return;
     }
