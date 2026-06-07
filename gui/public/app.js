@@ -621,9 +621,10 @@ async function refreshStatus() {
   el.codexState.className = status.codexInstalled ? "ok" : "bad";
   el.codexHome.textContent = status.codexHome;
   el.rootPath.textContent = status.root;
-  el.updateState.textContent = status.updateStatus
-    ? `${status.updateStatus.status}: ${status.updateStatus.message}`
-    : "未確認";
+  const updateMessages = [];
+  if (status.updateStatus) updateMessages.push(`GUI ${status.updateStatus.status}: ${status.updateStatus.message}`);
+  if (status.codexCliUpdateStatus) updateMessages.push(`CLI ${status.codexCliUpdateStatus.status}: ${status.codexCliUpdateStatus.message}`);
+  el.updateState.textContent = updateMessages.length ? updateMessages.join(" / ") : "未確認";
   if (!el.workspace.value) el.workspace.value = status.workspaceRoot;
   latestImageMtime = status.generatedImages?.[0]?.mtimeMs || 0;
   updateTokenLabel(currentRun?.tokensUsed || "");

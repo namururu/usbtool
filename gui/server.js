@@ -24,6 +24,7 @@ const npmCache = path.join(root, "tools", "npm-cache");
 const historyFile = path.join(dataDir, "gui-history.json");
 const stateFile = path.join(dataDir, "gui-state.json");
 const updateStatusFile = path.join(dataDir, "update-status.json");
+const codexCliUpdateStatusFile = path.join(dataDir, "codex-cli-update-status.json");
 const rateLimitCacheMs = 60_000;
 
 const args = process.argv.slice(2);
@@ -816,6 +817,7 @@ const server = http.createServer(async (req, res) => {
         history: loadHistory(),
         state: loadState(),
         updateStatus: loadJson(updateStatusFile, null),
+        codexCliUpdateStatus: loadJson(codexCliUpdateStatusFile, null),
         rateLimits: rateLimitCache.value,
         auth: {
           checked: Boolean(rateLimitCache.value),

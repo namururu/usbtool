@@ -35,4 +35,9 @@ if (Test-Path $stopScript) {
     & $stopScript -Quiet
 }
 
+$codexUpdateScript = Join-Path $Root "Update-Codex.ps1"
+if (Test-Path $codexUpdateScript) {
+    & $codexUpdateScript -Auto -Quiet
+}
+
 & (Join-Path $Root "Start-CodexGui.ps1") -Port $Port -NoBrowser:$NoBrowser
