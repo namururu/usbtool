@@ -141,7 +141,8 @@ h1 {
   font-size: 12px;
 }
 
-.is-running .run-state {
+.is-running .run-state,
+.has-remote-job .run-state {
   color: #061311;
   background: var(--accent);
   border-color: var(--accent);

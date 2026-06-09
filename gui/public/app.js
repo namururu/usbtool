@@ -171,6 +171,19 @@ function updateLoginButton(value = loggedIn) {
   el.loginBtn.classList.toggle("danger", loggedIn);
 }
 
+function updateRemoteRunState(status) {
+  const runningJobs = Array.isArray(status?.runningJobs) ? status.runningJobs : [];
+  const otherRunning = !currentJob && runningJobs.length > 0;
+  document.body.classList.toggle("has-remote-job", otherRunning);
+  if (otherRunning) {
+    el.runState.textContent = `AI作業中 ${runningJobs.length}`;
+    el.thinking.hidden = false;
+  } else if (!currentJob) {
+    el.runState.textContent = "待機中";
+    el.thinking.hidden = true;
+  }
+}
+
 function formatLimitWindow(window, fallbackLabel) {
   if (!window) return `${fallbackLabel}: -`;
   const used = Number(window.usedPercent);
@@ -657,8 +670,8 @@ function shouldHandleEvent(event) {
   return true;
 }
 
-async function refreshStatus() {
-  const res = await fetch("/api/status");
+async function refreshStatus(options = {}) {
+  const res = await fetch(`/api/status${options.light ? "?light=1" : ""}`);
   const status = await res.json();
   applySettings(readSettings());
   el.codexState.textContent = status.codexInstalled ? "OK" : "未インストール";
@@ -670,13 +683,14 @@ async function refreshStatus() {
   if (status.codexCliUpdateStatus) updateMessages.push(`CLI ${status.codexCliUpdateStatus.status}: ${status.codexCliUpdateStatus.message}`);
   el.updateState.textContent = updateMessages.length ? updateMessages.join(" / ") : "未確認";
   if (!el.workspace.value) el.workspace.value = status.workspaceRoot;
-  latestImageMtime = status.generatedImages?.[0]?.mtimeMs || 0;
+  if (!options.light) latestImageMtime = status.generatedImages?.[0]?.mtimeMs || 0;
   updateTokenLabel(currentRun?.tokensUsed || "");
   if (status.auth?.checked) updateLoginButton(status.auth.loggedIn);
   updateRateLimitLabel(status.rateLimits);
   statusCache = status;
   updateSessionLabel();
   renderHistorySummary(status.history || []);
+  updateRemoteRunState(status);
 }
 
 async function refreshRateLimits(force = false) {
@@ -1052,3 +1066,6 @@ refreshRateLimits(true).catch(() => {});
 setInterval(() => {
   refreshRateLimits(false).catch(() => {});
 }, 60_000);
+setInterval(() => {
+  refreshStatus({ light: true }).catch(() => {});
+}, 5_000);

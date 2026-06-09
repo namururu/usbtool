@@ -1083,16 +1083,18 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (req.method === "GET" && url.pathname === "/api/status") {
+      const light = url.searchParams.get("light") === "1";
       sendJson(res, 200, {
         root,
         workspaceRoot,
         codexHome,
         codexInstalled: fs.existsSync(codexCmd) || fs.existsSync(portableCodexExe),
         workspaces: listWorkspaces(),
-        generatedImages: listGeneratedImages(),
-        artifacts: listArtifacts(),
+        generatedImages: light ? [] : listGeneratedImages(),
+        artifacts: light ? [] : listArtifacts(),
         history: loadHistory(),
         state: loadState(),
+        runningJobs: [...jobs.values()].filter((job) => job.status === "running").map(summarizeJob),
         updateStatus: loadJson(updateStatusFile, null),
         codexCliUpdateStatus: loadJson(codexCliUpdateStatusFile, null),
         rateLimits: rateLimitCache.value,
