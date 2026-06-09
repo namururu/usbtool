@@ -83,6 +83,23 @@ The GUI can select Codex permission modes:
 - `bypass`: passes `--dangerously-bypass-approvals-and-sandbox`
 - `read-only`: inspection-only mode
 
+## Local Agent API
+
+For automation from another local Codex session or a LAN client, use the JSON API instead of clicking the GUI:
+
+```text
+GET  /api/agent
+POST /api/agent/run
+GET  /api/agent/jobs/{id}
+GET  /api/agent/jobs/{id}/events
+POST /api/agent/jobs/{id}/stop
+GET  /api/agent/files/artifacts
+GET  /api/agent/files/images
+GET  /api/agent/files/uploads
+```
+
+Start with `GET /api/agent`; it returns the endpoint list and example request bodies.
+
 To launch Codex inside a specific project:
 
 ```powershell

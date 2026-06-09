@@ -645,6 +645,66 @@ function push(job, type, data) {
   }
 }
 
+function summarizeJob(job) {
+  if (!job) return null;
+  const exitEvent = [...job.events].reverse().find((event) => event.type === "exit");
+  const artifactEvents = job.events.filter((event) => event.type === "artifacts").flatMap((event) => event.data || []);
+  return {
+    id: job.id,
+    status: job.status,
+    startedAt: job.startedAt,
+    workspace: job.workspace,
+    permission: job.permission,
+    sessionId: job.sessionId,
+    isResume: job.isResume,
+    commandPreview: job.commandPreview,
+    exit: exitEvent?.data || null,
+    artifacts: artifactEvents,
+    events: job.events,
+  };
+}
+
+function buildAgentHelp() {
+  return {
+    name: "Portable Codex Agent API",
+    version: "1",
+    base: "/api/agent",
+    notes: [
+      "Use this API from local/LAN automation instead of clicking the GUI.",
+      "LAN mode uses the same password cookie as the web UI.",
+      "Jobs can be monitored by polling /jobs/{id} or streaming /jobs/{id}/events.",
+    ],
+    endpoints: {
+      "GET /api/agent": "API description and endpoint list.",
+      "GET /api/agent/status": "Portable GUI/Codex status, artifacts, uploads, UI log summary.",
+      "POST /api/agent/run": "Start Codex. Body accepts prompt, workspace, model, permission, resume, japanese, autonomous, extraInstruction, uploads, newSession.",
+      "GET /api/agent/jobs/{id}": "Read job status and accumulated events.",
+      "GET /api/agent/jobs/{id}/events": "Server-sent events for the job.",
+      "POST /api/agent/jobs/{id}/stop": "Stop a running job.",
+      "GET /api/agent/files/artifacts": "List generated artifacts.",
+      "GET /api/agent/files/images": "List generated images.",
+      "GET /api/agent/files/uploads": "List uploaded files.",
+      "POST /api/agent/ui-log": "Append a synced UI log item. Body accepts type, kind, text, image, source.",
+      "POST /api/agent/ui-log/clear": "Clear synced UI log.",
+    },
+    examples: {
+      run: {
+        method: "POST",
+        url: "/api/agent/run",
+        body: {
+          prompt: "このフォルダを調査して要点をまとめて",
+          permission: "workspace-write",
+          resume: true,
+        },
+      },
+      poll: {
+        method: "GET",
+        url: "/api/agent/jobs/<id>",
+      },
+    },
+  };
+}
+
 function stopJob(job) {
   if (!job || !job.child || job.status !== "running") return;
   job.status = "stopping";
@@ -1046,6 +1106,120 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/rate-limits") {
       sendJson(res, 200, await getCachedRateLimits(url.searchParams.get("refresh") === "1"));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/agent") {
+      sendJson(res, 200, buildAgentHelp());
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/agent/status") {
+      const includeFiles = url.searchParams.get("includeFiles") === "1";
+      sendJson(res, 200, {
+        ok: true,
+        root,
+        workspaceRoot,
+        codexHome,
+        codexInstalled: fs.existsSync(codexCmd) || fs.existsSync(portableCodexExe),
+        runningJobs: [...jobs.values()].filter((job) => job.status === "running").map(summarizeJob),
+        artifacts: includeFiles ? listArtifacts() : undefined,
+        images: includeFiles ? listGeneratedImages() : undefined,
+        uploads: includeFiles ? listUploads() : undefined,
+        uiLogCount: loadUiLog().length,
+        updateStatus: loadJson(updateStatusFile, null),
+        codexCliUpdateStatus: loadJson(codexCliUpdateStatusFile, null),
+      });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/agent/run") {
+      const input = JSON.parse(await readBody(req));
+      const job = startJob(input);
+      sendJson(res, 200, {
+        ok: true,
+        id: job.id,
+        job: summarizeJob(job),
+        statusUrl: `/api/agent/jobs/${job.id}`,
+        eventsUrl: `/api/agent/jobs/${job.id}/events`,
+        stopUrl: `/api/agent/jobs/${job.id}/stop`,
+      });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/agent/jobs/") && url.pathname.endsWith("/events")) {
+      const id = url.pathname.split("/")[4];
+      const job = jobs.get(id);
+      if (!job) {
+        sendJson(res, 404, { error: "Job not found." });
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-store",
+        connection: "keep-alive",
+      });
+      for (const event of job.events) {
+        res.write(`id: ${event.id}\n`);
+        res.write(`event: ${event.type}\n`);
+        res.write(`data: ${JSON.stringify(event.data)}\n\n`);
+      }
+      if (job.status === "running") {
+        job.clients.add(res);
+        req.on("close", () => job.clients.delete(res));
+      } else {
+        res.end();
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/agent/jobs/")) {
+      const id = url.pathname.split("/")[4];
+      const job = jobs.get(id);
+      if (!job) {
+        sendJson(res, 404, { error: "Job not found." });
+        return;
+      }
+      sendJson(res, 200, { ok: true, job: summarizeJob(job) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/agent/jobs/") && url.pathname.endsWith("/stop")) {
+      const id = url.pathname.split("/")[4];
+      const job = jobs.get(id);
+      if (!job || !job.child) {
+        sendJson(res, 404, { error: "Job not found." });
+        return;
+      }
+      stopJob(job);
+      sendJson(res, 200, { ok: true, job: summarizeJob(job) });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/agent/files/artifacts") {
+      sendJson(res, 200, { ok: true, files: listArtifacts(), browseUrl: "/browse/artifacts" });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/agent/files/images") {
+      sendJson(res, 200, { ok: true, files: listGeneratedImages(), browseUrl: "/browse/generatedImages" });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/agent/files/uploads") {
+      sendJson(res, 200, { ok: true, files: listUploads(), browseUrl: "/browse/uploads" });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/agent/ui-log") {
+      const input = JSON.parse(await readBody(req));
+      sendJson(res, 200, { ok: true, event: pushUiLog(input) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/agent/ui-log/clear") {
+      clearUiLog();
+      sendJson(res, 200, { ok: true });
       return;
     }
 
