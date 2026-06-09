@@ -30,6 +30,11 @@ const rateLimitCacheMs = 60_000;
 const args = process.argv.slice(2);
 const portArgIndex = args.indexOf("--port");
 const port = portArgIndex >= 0 ? Number(args[portArgIndex + 1]) : Number(process.env.PORT || 41731);
+const hostArgIndex = args.indexOf("--host");
+const host = hostArgIndex >= 0 ? String(args[hostArgIndex + 1] || "127.0.0.1") : String(process.env.HOST || "127.0.0.1");
+const lanTokenArgIndex = args.indexOf("--lan-token");
+const lanToken = lanTokenArgIndex >= 0 ? String(args[lanTokenArgIndex + 1] || "") : String(process.env.PORTABLE_CODEX_LAN_TOKEN || "");
+const allowLan = host === "0.0.0.0" || host === "::";
 const jobs = new Map();
 let rateLimitCache = { at: 0, value: null };
 let rateLimitPending = null;
@@ -69,6 +74,26 @@ function readBody(req, maxBytes = 50_000_000) {
 function isLocalRequest(req) {
   const remote = req.socket.remoteAddress;
   return remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
+}
+
+function getCookie(req, name) {
+  const cookies = String(req.headers.cookie || "").split(";");
+  for (const cookie of cookies) {
+    const [key, ...rest] = cookie.trim().split("=");
+    if (key === name) return decodeURIComponent(rest.join("=") || "");
+  }
+  return "";
+}
+
+function authorizeRequest(req, res, url) {
+  if (isLocalRequest(req)) return true;
+  if (!allowLan || !lanToken) return false;
+  const token = url.searchParams.get("token")
+    || req.headers["x-portable-codex-token"]
+    || getCookie(req, "portable_codex_token");
+  if (token !== lanToken) return false;
+  res.setHeader("set-cookie", `portable_codex_token=${encodeURIComponent(lanToken)}; Path=/; SameSite=Lax`);
+  return true;
 }
 
 function resolveWorkspace(input) {
@@ -797,12 +822,11 @@ function serveFileFromDir(req, res, baseDir, name) {
 ensureDirs();
 
 const server = http.createServer(async (req, res) => {
-  if (!isLocalRequest(req)) {
-    sendJson(res, 403, { error: "Localhost only." });
+  const url = new URL(req.url, "http://127.0.0.1");
+  if (!authorizeRequest(req, res, url)) {
+    sendJson(res, 403, { error: "LAN access requires a valid token." });
     return;
   }
-
-  const url = new URL(req.url, "http://127.0.0.1");
 
   try {
     if (req.method === "GET" && url.pathname === "/api/status") {
@@ -956,6 +980,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(port, "127.0.0.1", () => {
-  console.log(`Portable Codex GUI listening on http://127.0.0.1:${port}`);
+server.listen(port, host, () => {
+  const shownHost = host === "0.0.0.0" ? "127.0.0.1" : host;
+  console.log(`Portable Codex GUI listening on http://${shownHost}:${port}`);
+  if (allowLan) {
+    console.log("LAN sharing is enabled. Use the tokenized URL printed by Start-CodexGui.ps1.");
+  }
 });

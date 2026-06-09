@@ -1,6 +1,8 @@
 param(
     [int]$Port = 41731,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$Lan,
+    [string]$LanToken = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +20,12 @@ if (-not (Test-IsAdministrator)) {
     $argsList = "-NoProfile -ExecutionPolicy Bypass -File $quotedScript -Port $Port"
     if ($NoBrowser) {
         $argsList += " -NoBrowser"
+    }
+    if ($Lan) {
+        $argsList += " -Lan"
+    }
+    if ($LanToken) {
+        $argsList += " -LanToken `"$LanToken`""
     }
     Start-Process -FilePath "powershell.exe" -Verb RunAs -WorkingDirectory $Root -ArgumentList $argsList | Out-Null
     exit 0
@@ -40,4 +48,4 @@ if (Test-Path $codexUpdateScript) {
     & $codexUpdateScript -Auto -Quiet
 }
 
-& (Join-Path $Root "Start-CodexGui.ps1") -Port $Port -NoBrowser:$NoBrowser
+& (Join-Path $Root "Start-CodexGui.ps1") -Port $Port -NoBrowser:$NoBrowser -Lan:$Lan -LanToken $LanToken

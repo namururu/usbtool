@@ -1,6 +1,8 @@
 param(
     [int]$Port = 41731,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$Lan,
+    [string]$LanToken = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +16,22 @@ $PortableCodexExe = Join-Path $Root "tools\codex\vendor\x86_64-pc-windows-msvc\b
 $CodexHome = Join-Path $Root "data\codex-home"
 $WorkspaceDir = Join-Path $Root "workspaces"
 $GuiServer = Join-Path $Root "gui\server.js"
+
+function New-ShareToken {
+    $bytes = New-Object byte[] 18
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+}
+
+function Get-LanAddress {
+    $addresses = [System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) |
+        Where-Object {
+            $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and
+            -not $_.IPAddressToString.StartsWith("127.")
+        } |
+        Select-Object -ExpandProperty IPAddressToString
+    return $addresses | Select-Object -First 1
+}
 
 function Add-PathFirst {
     param([string]$PathToAdd)
@@ -53,16 +71,22 @@ if (-not (Test-Path $GuiServer)) {
     throw "GUI server is missing: $GuiServer"
 }
 
-$url = "http://127.0.0.1:$Port"
+$BindHost = if ($Lan) { "0.0.0.0" } else { "127.0.0.1" }
+if ($Lan -and -not $LanToken) {
+    $LanToken = New-ShareToken
+}
+$LocalUrl = if ($Lan) { "http://127.0.0.1:$Port/?token=$LanToken" } else { "http://127.0.0.1:$Port" }
+$LanAddress = if ($Lan) { Get-LanAddress } else { "" }
+$LanUrl = if ($LanAddress) { "http://$LanAddress`:$Port/?token=$LanToken" } else { "" }
 try {
     $client = [System.Net.Sockets.TcpClient]::new()
     $connected = $client.ConnectAsync("127.0.0.1", $Port).Wait(400)
     $client.Close()
     if ($connected) {
         Write-Host "Portable Codex GUI already appears to be running."
-        Write-Host "Opening $url"
+        Write-Host "Opening $LocalUrl"
         if (-not $NoBrowser) {
-            Start-Process $url | Out-Null
+            Start-Process $LocalUrl | Out-Null
         }
         exit 0
     }
@@ -72,11 +96,27 @@ catch {
 }
 
 Write-Host "Starting Portable Codex GUI..."
-Write-Host "URL=$url"
+Write-Host "URL=$LocalUrl"
+if ($Lan) {
+    Write-Host ""
+    Write-Host "LAN sharing is enabled."
+    if ($LanUrl) {
+        Write-Host "Share URL=$LanUrl"
+    }
+    else {
+        Write-Host "Share URL: could not detect LAN IP. Run ipconfig and use http://<IPv4>:$Port/?token=$LanToken"
+    }
+    Write-Host "Only share this URL with trusted people on this LAN."
+    Write-Host ""
+}
 Write-Host "CODEX_HOME=$CodexHome"
 
 if (-not $NoBrowser) {
-    Start-Process $url | Out-Null
+    Start-Process $LocalUrl | Out-Null
 }
 
-& (Join-Path $NodeDir "node.exe") $GuiServer --port $Port
+$serverArgs = @($GuiServer, "--port", $Port, "--host", $BindHost)
+if ($Lan) {
+    $serverArgs += @("--lan-token", $LanToken)
+}
+& (Join-Path $NodeDir "node.exe") @serverArgs

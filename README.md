@@ -64,6 +64,14 @@ It opens `http://127.0.0.1:41731` by default.
 
 Use the `ログイン` button on first run. It opens a PowerShell window for `codex login` while keeping `CODEX_HOME` on the USB drive.
 
+For temporary sharing with another trusted machine on the same LAN, use:
+
+```powershell
+.\Start-CodexGui.ps1 -Lan
+```
+
+or double-click `start-lan.bat`. The launcher prints a tokenized Share URL such as `http://192.168.x.x:41731/?token=...`. Anyone with that URL can operate the GUI and Codex session, so share it only on trusted networks and stop the GUI when finished.
+
 The GUI sends the first prompt with the Japanese/autonomy base instructions. Follow-up prompts resume the same recorded Codex session for that workspace, so only your new message is sent.
 
 This is not a full embedded TUI. It is a chat-like wrapper over `codex exec` and `codex exec resume`. Use `Start-Codex.ps1` when you need the native interactive terminal UI.
