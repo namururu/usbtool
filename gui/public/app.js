@@ -51,6 +51,7 @@ let seenEventIds = new Set();
 let streamFinished = false;
 let runAbortController = null;
 let loggedIn = false;
+const clientId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
 const settingsKey = "portableCodexGuiSettings";
 const imageSessionKey = "portableCodexImageSession";
 
@@ -299,12 +300,23 @@ function applySettings(settings) {
   syncActiveModelFromSettings();
 }
 
-function append(text, kind = "") {
+function syncUiLog(event) {
+  fetch("/api/ui-log", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...event, source: clientId }),
+  }).catch(() => {});
+}
+
+function append(text, kind = "", options = {}) {
   const row = document.createElement("div");
   row.className = `log-line ${kind || "assistant"}`;
   row.textContent = text;
   el.terminal.append(row);
   el.terminal.scrollTop = el.terminal.scrollHeight;
+  if (options.sync !== false) {
+    syncUiLog({ type: "text", text, kind });
+  }
 }
 
 function appendLine(text, kind = "") {
@@ -319,6 +331,35 @@ function appendUserMessage(text, uploads = []) {
     for (const file of uploads) parts.push(`- ${file.name}`);
   }
   append(parts.join("\n"), "user");
+}
+
+function renderSyncedUiEvent(event) {
+  if (!event || event.source === clientId) return;
+  if (event.type === "image" && event.image) {
+    appendImageCard(event.image, { sync: false });
+    return;
+  }
+  append(event.text || "", event.kind || "", { sync: false });
+}
+
+async function loadUiLog() {
+  const res = await fetch("/api/ui-log");
+  if (!res.ok) return;
+  const body = await res.json();
+  el.terminal.textContent = "";
+  for (const event of body.events || []) {
+    renderSyncedUiEvent({ ...event, source: "" });
+  }
+}
+
+function subscribeUiLog() {
+  const uiStream = new EventSource("/api/ui-log/events");
+  uiStream.addEventListener("ui-log", (event) => {
+    renderSyncedUiEvent(JSON.parse(event.data));
+  });
+  uiStream.addEventListener("ui-clear", () => {
+    el.terminal.textContent = "";
+  });
 }
 
 function setRunning(running) {
@@ -418,12 +459,12 @@ async function uploadPendingFiles() {
   return body.uploads || [];
 }
 
-function appendImageCard(image) {
+function appendImageCard(image, options = {}) {
   const marker = `[image:${image.name}]`;
   if (el.terminal.textContent.includes(marker)) return;
   writeImageSession(image);
   const url = `${image.url}?t=${Math.round(image.mtimeMs)}`;
-  append(`\n${marker}\n`);
+  append(`\n${marker}\n`, "", { sync: false });
   el.terminal.insertAdjacentHTML("beforeend", `
     <div class="image-card">
       <a href="${url}" target="_blank" rel="noreferrer">
@@ -433,6 +474,9 @@ function appendImageCard(image) {
     </div>
   `);
   el.terminal.scrollTop = el.terminal.scrollHeight;
+  if (options.sync !== false) {
+    syncUiLog({ type: "image", image });
+  }
 }
 
 function appendArtifactCards(artifacts) {
@@ -959,6 +1003,7 @@ el.newSessionBtn.addEventListener("click", newSession);
 el.stopBtn.addEventListener("click", stopCodex);
 el.clearBtn.addEventListener("click", () => {
   el.terminal.textContent = "";
+  fetch("/api/ui-log/clear", { method: "POST" }).catch(() => {});
 });
 el.workspace.addEventListener("change", () => {
   updateSessionLabel();
@@ -997,6 +1042,8 @@ el.prompt.addEventListener("keydown", (event) => {
   }
 });
 
+loadUiLog().catch(() => {});
+subscribeUiLog();
 refreshStatus().catch((error) => {
   el.codexState.textContent = "エラー";
   appendLine(error.message, "error");

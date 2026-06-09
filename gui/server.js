@@ -22,6 +22,7 @@ const pythonScriptsDir = path.join(pythonDir, "Scripts");
 const npmPrefix = path.join(root, "tools", "npm-global");
 const npmCache = path.join(root, "tools", "npm-cache");
 const historyFile = path.join(dataDir, "gui-history.json");
+const uiLogFile = path.join(dataDir, "gui-ui-log.json");
 const stateFile = path.join(dataDir, "gui-state.json");
 const updateStatusFile = path.join(dataDir, "update-status.json");
 const codexCliUpdateStatusFile = path.join(dataDir, "codex-cli-update-status.json");
@@ -36,6 +37,7 @@ const lanTokenArgIndex = args.indexOf("--lan-token");
 const lanPassword = lanTokenArgIndex >= 0 ? String(args[lanTokenArgIndex + 1] || "") : String(process.env.PORTABLE_CODEX_LAN_TOKEN || "");
 const allowLan = host === "0.0.0.0" || host === "::";
 const jobs = new Map();
+const uiLogClients = new Set();
 let rateLimitCache = { at: 0, value: null };
 let rateLimitPending = null;
 
@@ -156,6 +158,42 @@ function saveJson(file, value) {
 
 function loadHistory() {
   return loadJson(historyFile, []);
+}
+
+function loadUiLog() {
+  return loadJson(uiLogFile, []);
+}
+
+function saveUiLog(events) {
+  saveJson(uiLogFile, events.slice(-400));
+}
+
+function pushUiLog(event) {
+  const entry = {
+    id: crypto.randomUUID(),
+    at: new Date().toISOString(),
+    type: event.type || "text",
+    kind: event.kind || "",
+    text: String(event.text || ""),
+    image: event.image || null,
+    source: String(event.source || ""),
+  };
+  const events = loadUiLog();
+  events.push(entry);
+  saveUiLog(events);
+  for (const res of uiLogClients) {
+    res.write(`event: ui-log\n`);
+    res.write(`data: ${JSON.stringify(entry)}\n\n`);
+  }
+  return entry;
+}
+
+function clearUiLog() {
+  saveUiLog([]);
+  for (const res of uiLogClients) {
+    res.write(`event: ui-clear\n`);
+    res.write(`data: {}\n\n`);
+  }
 }
 
 function loadState() {
@@ -1019,6 +1057,34 @@ const server = http.createServer(async (req, res) => {
         "cache-control": "no-store",
       });
       res.end(text);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/ui-log") {
+      sendJson(res, 200, { events: loadUiLog() });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/ui-log") {
+      const input = JSON.parse(await readBody(req));
+      sendJson(res, 200, { event: pushUiLog(input) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/ui-log/clear") {
+      clearUiLog();
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/ui-log/events") {
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-store",
+        connection: "keep-alive",
+      });
+      uiLogClients.add(res);
+      req.on("close", () => uiLogClients.delete(res));
       return;
     }
 
