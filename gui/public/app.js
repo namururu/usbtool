@@ -905,6 +905,10 @@ async function handleLoginButton() {
 }
 
 async function openFolder(target) {
+  if (!["localhost", "127.0.0.1", "::1"].includes(location.hostname)) {
+    window.open(`/browse/${encodeURIComponent(target)}`, "_blank", "noopener,noreferrer");
+    return;
+  }
   const res = await fetch("/api/open-folder", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -913,6 +917,7 @@ async function openFolder(target) {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     appendLine(body.error || "フォルダを開けませんでした。", "error");
+    window.open(`/browse/${encodeURIComponent(target)}`, "_blank", "noopener,noreferrer");
   }
 }
 

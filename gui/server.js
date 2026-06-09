@@ -223,6 +223,21 @@ function formatHistoryText() {
   }).join("\n\n" + "-".repeat(72) + "\n\n") + "\n";
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function formatBytes(size) {
+  const value = Number(size || 0);
+  if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${value} B`;
+}
+
 function listWorkspaces() {
   fs.mkdirSync(workspaceRoot, { recursive: true });
   return fs.readdirSync(workspaceRoot, { withFileTypes: true })
@@ -281,6 +296,12 @@ function listGeneratedImages() {
 function listArtifacts() {
   return walkFiles(artifactsDir, artifactExtensions)
     .map((filePath) => toListedFile(filePath, artifactsDir, "/api/artifacts", "artifacts"))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+function listUploads() {
+  return walkFiles(uploadsDir, artifactExtensions)
+    .map((filePath) => toListedFile(filePath, uploadsDir, "/api/uploads-file", "uploads"))
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
@@ -821,6 +842,98 @@ function serveArtifact(req, res, name) {
   serveFileFromDir(req, res, artifactsDir, name);
 }
 
+function serveUploadFile(req, res, name) {
+  serveFileFromDir(req, res, uploadsDir, name);
+}
+
+function getBrowserFiles(target) {
+  if (target === "artifacts") {
+    return { title: "成果物", files: listArtifacts() };
+  }
+  if (target === "generatedImages") {
+    return { title: "画像", files: listGeneratedImages() };
+  }
+  if (target === "uploads") {
+    return { title: "添付", files: listUploads() };
+  }
+  return null;
+}
+
+function serveFileBrowser(res, target) {
+  const data = getBrowserFiles(target);
+  if (!data) {
+    sendJson(res, 404, { error: "Unknown browser target." });
+    return;
+  }
+
+  const items = data.files.map((file) => {
+    const ext = path.extname(file.name).toLowerCase();
+    const isImage = imageExtensions.has(ext);
+    const modified = new Date(file.mtimeMs).toLocaleString("ja-JP", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const preview = isImage
+      ? `<a class="thumb" href="${file.url}" target="_blank" rel="noreferrer"><img src="${file.url}" alt=""></a>`
+      : `<a class="icon" href="${file.url}" target="_blank" rel="noreferrer">file</a>`;
+    return `<article>
+      ${preview}
+      <div>
+        <a class="name" href="${file.url}" target="_blank" rel="noreferrer">${escapeHtml(file.name)}</a>
+        <p>${formatBytes(file.size)} / ${escapeHtml(modified)}</p>
+      </div>
+    </article>`;
+  }).join("");
+
+  const html = `<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portable Codex ${escapeHtml(data.title)}</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; background: #111316; color: #f3f1ec; }
+    main { width: min(1100px, calc(100vw - 28px)); margin: 0 auto; padding: 18px 0 32px; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    h1 { margin: 0; font-size: 20px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; }
+    nav a { color: #e6bb55; text-decoration: none; border: 1px solid #343a44; padding: 6px 9px; border-radius: 6px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+    article { min-width: 0; display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; align-items: center; border: 1px solid #343a44; background: #1a1d22; border-radius: 8px; padding: 10px; }
+    .thumb, .icon { width: 76px; height: 58px; display: grid; place-items: center; border: 1px solid #343a44; border-radius: 6px; background: #090b0d; color: #aeb4be; text-decoration: none; overflow: hidden; }
+    img { width: 100%; height: 100%; object-fit: contain; }
+    .name { color: #f3f1ec; text-decoration: none; overflow-wrap: anywhere; }
+    p { margin: 5px 0 0; color: #aeb4be; font-size: 12px; }
+    .empty { color: #aeb4be; border: 1px solid #343a44; padding: 18px; border-radius: 8px; background: #1a1d22; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>${escapeHtml(data.title)}</h1>
+      <nav>
+        <a href="/browse/artifacts">成果物</a>
+        <a href="/browse/generatedImages">画像</a>
+        <a href="/browse/uploads">添付</a>
+        <a href="/">チャット</a>
+      </nav>
+    </header>
+    ${data.files.length ? `<section class="grid">${items}</section>` : `<div class="empty">まだファイルはありません。</div>`}
+  </main>
+</body>
+</html>`;
+  res.writeHead(200, {
+    "content-type": "text/html; charset=utf-8",
+    "content-length": Buffer.byteLength(html),
+    "cache-control": "no-store",
+  });
+  res.end(html);
+}
+
 function serveFileFromDir(req, res, baseDir, name) {
   const decoded = decodeURIComponent(name || "");
   if (!decoded || decoded.includes("..")) {
@@ -926,6 +1039,16 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/uploads-list") {
+      sendJson(res, 200, { uploads: listUploads() });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/browse/")) {
+      serveFileBrowser(res, url.pathname.slice("/browse/".length));
+      return;
+    }
+
     if (req.method === "GET" && url.pathname.startsWith("/api/generated-images/")) {
       serveGeneratedImage(req, res, url.pathname.slice("/api/generated-images/".length));
       return;
@@ -933,6 +1056,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname.startsWith("/api/artifacts/")) {
       serveArtifact(req, res, url.pathname.slice("/api/artifacts/".length));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/uploads-file/")) {
+      serveUploadFile(req, res, url.pathname.slice("/api/uploads-file/".length));
       return;
     }
 
