@@ -100,6 +100,8 @@ GET  /api/agent/files/uploads
 
 Start with `GET /api/agent`; it returns the endpoint list and example request bodies.
 
+For a compact AI-facing guide, see `AGENT_API_KISWAHILI.md`.
+
 To launch Codex inside a specific project:
 
 ```powershell

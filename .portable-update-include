@@ -1,5 +1,6 @@
 VERSION
 README.md
+AGENT_API_KISWAHILI.md
 Install-UsbCodex.ps1
 Install-PythonRuntime.ps1
 Set-CodexStatusLine.ps1
