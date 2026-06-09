@@ -669,9 +669,12 @@ function buildAgentHelp() {
     name: "Portable Codex Agent API",
     version: "1",
     base: "/api/agent",
+    guideUrl: "/agent-api",
+    guideMarkdownUrl: "/agent-api-kiswahili.md",
     notes: [
       "Use this API from local/LAN automation instead of clicking the GUI.",
       "LAN mode uses the same password cookie as the web UI.",
+      "Give /agent-api or /agent-api-kiswahili.md to another AI so it can learn this API quickly.",
       "Jobs can be monitored by polling /jobs/{id} or streaming /jobs/{id}/events.",
     ],
     endpoints: {
@@ -1068,6 +1071,23 @@ function serveFileFromDir(req, res, baseDir, name) {
   fs.createReadStream(resolvedFile).pipe(res);
 }
 
+function serveRootMarkdown(res, fileName) {
+  const resolvedRoot = path.resolve(root);
+  const resolvedFile = path.resolve(root, fileName);
+  if (!resolvedFile.startsWith(resolvedRoot) || !fs.existsSync(resolvedFile) || !fs.statSync(resolvedFile).isFile()) {
+    res.writeHead(404);
+    res.end("Not found");
+    return;
+  }
+  const data = fs.readFileSync(resolvedFile);
+  res.writeHead(200, {
+    "content-type": "text/markdown; charset=utf-8",
+    "content-length": data.length,
+    "cache-control": "no-store",
+  });
+  res.end(data);
+}
+
 ensureDirs();
 
 const server = http.createServer(async (req, res) => {
@@ -1082,6 +1102,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
+    if (req.method === "GET" && (url.pathname === "/agent-api" || url.pathname === "/agent-api-kiswahili.md")) {
+      serveRootMarkdown(res, "AGENT_API_KISWAHILI.md");
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/api/status") {
       const light = url.searchParams.get("light") === "1";
       sendJson(res, 200, {

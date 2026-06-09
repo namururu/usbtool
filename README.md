@@ -100,7 +100,11 @@ GET  /api/agent/files/uploads
 
 Start with `GET /api/agent`; it returns the endpoint list and example request bodies.
 
-For a compact AI-facing guide, see `AGENT_API_KISWAHILI.md`.
+For a compact AI-facing guide, see `AGENT_API_KISWAHILI.md`. When the GUI server is running, you can also give another AI this URL:
+
+```text
+http://127.0.0.1:41731/agent-api
+```
 
 To launch Codex inside a specific project:
 
