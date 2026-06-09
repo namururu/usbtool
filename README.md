@@ -70,7 +70,7 @@ For temporary sharing with another trusted machine on the same LAN, use:
 .\Start-CodexGui.ps1 -Lan
 ```
 
-or double-click `start-lan.bat`. The launcher prints a tokenized Share URL such as `http://192.168.x.x:41731/?token=...`. Anyone with that URL can operate the GUI and Codex session, so share it only on trusted networks and stop the GUI when finished.
+or double-click `start-lan.bat`. The launcher prints a Share URL such as `http://192.168.x.x:41731` and a short password. Anyone with that URL and password can operate the GUI and Codex session, so share it only on trusted networks and stop the GUI when finished.
 
 The GUI sends the first prompt with the Japanese/autonomy base instructions. Follow-up prompts resume the same recorded Codex session for that workspace, so only your new message is sent.
 

@@ -2,6 +2,7 @@ param(
     [int]$Port = 41731,
     [switch]$NoBrowser,
     [switch]$Lan,
+    [string]$LanPassword = "",
     [string]$LanToken = ""
 )
 
@@ -23,6 +24,9 @@ if (-not (Test-IsAdministrator)) {
     }
     if ($Lan) {
         $argsList += " -Lan"
+    }
+    if ($LanPassword) {
+        $argsList += " -LanPassword `"$LanPassword`""
     }
     if ($LanToken) {
         $argsList += " -LanToken `"$LanToken`""
@@ -48,4 +52,4 @@ if (Test-Path $codexUpdateScript) {
     & $codexUpdateScript -Auto -Quiet
 }
 
-& (Join-Path $Root "Start-CodexGui.ps1") -Port $Port -NoBrowser:$NoBrowser -Lan:$Lan -LanToken $LanToken
+& (Join-Path $Root "Start-CodexGui.ps1") -Port $Port -NoBrowser:$NoBrowser -Lan:$Lan -LanPassword $LanPassword -LanToken $LanToken

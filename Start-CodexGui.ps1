@@ -2,6 +2,7 @@ param(
     [int]$Port = 41731,
     [switch]$NoBrowser,
     [switch]$Lan,
+    [string]$LanPassword = "",
     [string]$LanToken = ""
 )
 
@@ -17,10 +18,8 @@ $CodexHome = Join-Path $Root "data\codex-home"
 $WorkspaceDir = Join-Path $Root "workspaces"
 $GuiServer = Join-Path $Root "gui\server.js"
 
-function New-ShareToken {
-    $bytes = New-Object byte[] 18
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-    return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+function New-SharePassword {
+    return (Get-Random -Minimum 100000 -Maximum 999999).ToString()
 }
 
 function Get-LanAddress {
@@ -72,12 +71,15 @@ if (-not (Test-Path $GuiServer)) {
 }
 
 $BindHost = if ($Lan) { "0.0.0.0" } else { "127.0.0.1" }
-if ($Lan -and -not $LanToken) {
-    $LanToken = New-ShareToken
+if ($LanToken -and -not $LanPassword) {
+    $LanPassword = $LanToken
 }
-$LocalUrl = if ($Lan) { "http://127.0.0.1:$Port/?token=$LanToken" } else { "http://127.0.0.1:$Port" }
+if ($Lan -and -not $LanPassword) {
+    $LanPassword = New-SharePassword
+}
+$LocalUrl = "http://127.0.0.1:$Port"
 $LanAddress = if ($Lan) { Get-LanAddress } else { "" }
-$LanUrl = if ($LanAddress) { "http://$LanAddress`:$Port/?token=$LanToken" } else { "" }
+$LanUrl = if ($LanAddress) { "http://$LanAddress`:$Port" } else { "" }
 try {
     $client = [System.Net.Sockets.TcpClient]::new()
     $connected = $client.ConnectAsync("127.0.0.1", $Port).Wait(400)
@@ -102,9 +104,11 @@ if ($Lan) {
     Write-Host "LAN sharing is enabled."
     if ($LanUrl) {
         Write-Host "Share URL=$LanUrl"
+        Write-Host "Password=$LanPassword"
     }
     else {
-        Write-Host "Share URL: could not detect LAN IP. Run ipconfig and use http://<IPv4>:$Port/?token=$LanToken"
+        Write-Host "Share URL: could not detect LAN IP. Run ipconfig and use http://<IPv4>:$Port"
+        Write-Host "Password=$LanPassword"
     }
     Write-Host "Only share this URL with trusted people on this LAN."
     Write-Host ""
@@ -117,6 +121,6 @@ if (-not $NoBrowser) {
 
 $serverArgs = @($GuiServer, "--port", $Port, "--host", $BindHost)
 if ($Lan) {
-    $serverArgs += @("--lan-token", $LanToken)
+    $serverArgs += @("--lan-token", $LanPassword)
 }
 & (Join-Path $NodeDir "node.exe") @serverArgs

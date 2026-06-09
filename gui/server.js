@@ -33,7 +33,7 @@ const port = portArgIndex >= 0 ? Number(args[portArgIndex + 1]) : Number(process
 const hostArgIndex = args.indexOf("--host");
 const host = hostArgIndex >= 0 ? String(args[hostArgIndex + 1] || "127.0.0.1") : String(process.env.HOST || "127.0.0.1");
 const lanTokenArgIndex = args.indexOf("--lan-token");
-const lanToken = lanTokenArgIndex >= 0 ? String(args[lanTokenArgIndex + 1] || "") : String(process.env.PORTABLE_CODEX_LAN_TOKEN || "");
+const lanPassword = lanTokenArgIndex >= 0 ? String(args[lanTokenArgIndex + 1] || "") : String(process.env.PORTABLE_CODEX_LAN_TOKEN || "");
 const allowLan = host === "0.0.0.0" || host === "::";
 const jobs = new Map();
 let rateLimitCache = { at: 0, value: null };
@@ -87,13 +87,51 @@ function getCookie(req, name) {
 
 function authorizeRequest(req, res, url) {
   if (isLocalRequest(req)) return true;
-  if (!allowLan || !lanToken) return false;
-  const token = url.searchParams.get("token")
+  if (!allowLan || !lanPassword) return false;
+  const password = url.searchParams.get("pass")
+    || url.searchParams.get("password")
+    || url.searchParams.get("token")
     || req.headers["x-portable-codex-token"]
+    || getCookie(req, "portable_codex_lan_password")
     || getCookie(req, "portable_codex_token");
-  if (token !== lanToken) return false;
-  res.setHeader("set-cookie", `portable_codex_token=${encodeURIComponent(lanToken)}; Path=/; SameSite=Lax`);
+  if (password !== lanPassword) return false;
+  res.setHeader("set-cookie", `portable_codex_lan_password=${encodeURIComponent(lanPassword)}; Path=/; SameSite=Lax`);
   return true;
+}
+
+function serveLanPasswordPage(res) {
+  const html = `<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portable Codex LAN Login</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #111316; color: #f3f1ec; }
+    form { width: min(360px, calc(100vw - 32px)); display: grid; gap: 12px; }
+    h1 { margin: 0; font-size: 20px; }
+    p { margin: 0; color: #aeb4be; }
+    input, button { font: inherit; border-radius: 6px; padding: 11px 12px; }
+    input { border: 1px solid #343a44; background: #15181d; color: #f3f1ec; }
+    button { border: 1px solid #29b39a; background: #29b39a; color: #061311; font-weight: 700; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <form method="get" action="/">
+    <h1>Portable Codex</h1>
+    <p>LAN共有パスワードを入力してください。</p>
+    <input name="pass" type="password" autocomplete="current-password" autofocus>
+    <button type="submit">入る</button>
+  </form>
+</body>
+</html>`;
+  res.writeHead(200, {
+    "content-type": "text/html; charset=utf-8",
+    "content-length": Buffer.byteLength(html),
+    "cache-control": "no-store",
+  });
+  res.end(html);
 }
 
 function resolveWorkspace(input) {
@@ -824,7 +862,11 @@ ensureDirs();
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://127.0.0.1");
   if (!authorizeRequest(req, res, url)) {
-    sendJson(res, 403, { error: "LAN access requires a valid token." });
+    if (allowLan && !isLocalRequest(req) && req.method === "GET") {
+      serveLanPasswordPage(res);
+      return;
+    }
+    sendJson(res, 403, { error: "LAN access requires a valid password." });
     return;
   }
 
@@ -984,6 +1026,6 @@ server.listen(port, host, () => {
   const shownHost = host === "0.0.0.0" ? "127.0.0.1" : host;
   console.log(`Portable Codex GUI listening on http://${shownHost}:${port}`);
   if (allowLan) {
-    console.log("LAN sharing is enabled. Use the tokenized URL printed by Start-CodexGui.ps1.");
+    console.log("LAN sharing is enabled. Use the share URL and password printed by Start-CodexGui.ps1.");
   }
 });
