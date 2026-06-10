@@ -4,6 +4,7 @@ param(
     [switch]$FullRuntime,
     [switch]$IncludeAuth,
     [switch]$IncludeWorkspaces,
+    [switch]$SkipCodexCliUpdate,
     [switch]$CleanOutput
 )
 
@@ -81,6 +82,17 @@ Assert-UnderRootOrExplicit $OutputPath
 
 if ($CleanOutput -and (Test-Path $OutputPath)) {
     Remove-DirectoryRobust $OutputPath
+}
+
+if ($IncludeRuntime -and -not $SkipCodexCliUpdate) {
+    $updateCodex = Join-Path $Root "Update-Codex.ps1"
+    if (Test-Path $updateCodex) {
+        Write-Host "Checking latest Codex CLI before building runtime..."
+        & $updateCodex -Quiet -CheckIntervalHours 0
+    }
+    else {
+        Write-Warning "Update-Codex.ps1 was not found. Bundled Codex CLI may be stale."
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $AppOutput | Out-Null

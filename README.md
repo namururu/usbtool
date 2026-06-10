@@ -125,6 +125,8 @@ To pass arguments through to Codex:
 .\Update-Codex.ps1
 ```
 
+`Build-UsbCarry.ps1 -IncludeRuntime` also checks the latest Codex CLI before copying the runtime, so newly built USB carry folders start with the current native Windows CLI. Startup scripts keep running `Update-Codex.ps1 -Auto -Quiet`; after carrying the USB, the CLI is checked at most once per 12 hours and updated when npm publishes a newer version.
+
 ## Self Update Channel
 
 This folder is split into public app files and private local state.
@@ -212,8 +214,9 @@ usb\portable-codex-usb
 
 Options:
 
-- `-IncludeRuntime`: include minimal `node.exe`, native `codex.exe`, and `tools\python` when installed
+- `-IncludeRuntime`: update/check Codex CLI first, then include minimal `node.exe`, native `codex.exe`, and `tools\python` when installed
 - `-FullRuntime`: with `-IncludeRuntime`, include full Node/npm and npm-installed Codex CLI instead
+- `-SkipCodexCliUpdate`: with `-IncludeRuntime`, skip the build-time Codex CLI update check
 - `-IncludeAuth`: include `data\codex-home` login/session state
 - `-IncludeWorkspaces`: include `workspaces`
 
