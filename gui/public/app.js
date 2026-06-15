@@ -12,6 +12,7 @@ const el = {
   permission: document.querySelector("#permission"),
   bypass: document.querySelector("#bypass"),
   enterToSend: document.querySelector("#enterToSend"),
+  shiftEnterToSend: document.querySelector("#shiftEnterToSend"),
   resume: document.querySelector("#resume"),
   japanese: document.querySelector("#japanese"),
   autonomous: document.querySelector("#autonomous"),
@@ -277,6 +278,7 @@ function writeSettings() {
     permission: el.permission.value,
     bypass: el.bypass.checked,
     enterToSend: el.enterToSend.checked,
+    shiftEnterToSend: el.shiftEnterToSend.checked,
     resume: el.resume.checked,
     japanese: el.japanese.checked,
     autonomous: el.autonomous.checked,
@@ -306,6 +308,7 @@ function applySettings(settings) {
   if (settings.permission) el.permission.value = settings.permission;
   if (settings.bypass !== undefined) el.bypass.checked = Boolean(settings.bypass);
   if (settings.enterToSend !== undefined) el.enterToSend.checked = Boolean(settings.enterToSend);
+  if (settings.shiftEnterToSend !== undefined) el.shiftEnterToSend.checked = Boolean(settings.shiftEnterToSend);
   if (settings.resume !== undefined) el.resume.checked = Boolean(settings.resume);
   if (settings.japanese !== undefined) el.japanese.checked = Boolean(settings.japanese);
   if (settings.autonomous !== undefined) el.autonomous.checked = Boolean(settings.autonomous);
@@ -1029,7 +1032,7 @@ el.tokenBudget.addEventListener("change", () => {
 });
 el.model.addEventListener("change", () => setModel(el.model.value));
 el.activeModel.addEventListener("change", () => setModel(el.activeModel.value));
-for (const item of [el.permission, el.bypass, el.enterToSend, el.resume, el.japanese, el.autonomous, el.extraInstruction]) {
+for (const item of [el.permission, el.bypass, el.enterToSend, el.shiftEnterToSend, el.resume, el.japanese, el.autonomous, el.extraInstruction]) {
   item.addEventListener("change", writeSettings);
 }
 
@@ -1049,8 +1052,9 @@ document.addEventListener("paste", (event) => {
 });
 el.prompt.addEventListener("keydown", (event) => {
   const wantsEnterSend = el.enterToSend.checked && !event.shiftKey;
+  const wantsShiftEnterSend = el.shiftEnterToSend.checked && event.shiftKey;
   const wantsShortcutSend = event.key === "Enter" && (event.ctrlKey || event.metaKey);
-  if (event.key === "Enter" && (wantsEnterSend || wantsShortcutSend)) {
+  if (event.key === "Enter" && (wantsEnterSend || wantsShiftEnterSend || wantsShortcutSend)) {
     event.preventDefault();
     runCodex();
   }
