@@ -14,7 +14,7 @@ const artifactsDir = path.join(dataDir, "artifacts");
 const uploadsDir = path.join(dataDir, "uploads");
 const codexCmd = path.join(root, "tools", "npm-global", "codex.cmd");
 const codexJs = path.join(root, "tools", "npm-global", "node_modules", "@openai", "codex", "bin", "codex.js");
-const portableCodexExe = path.join(root, "tools", "codex", "vendor", "x86_64-pc-windows-msvc", "bin", "codex.exe");
+const portableCodexExe = findPortableCodexExe();
 const nodeDir = path.join(root, "tools", "node");
 const nodeExe = path.join(nodeDir, "node.exe");
 const pythonDir = path.join(root, "tools", "python");
@@ -40,6 +40,25 @@ const jobs = new Map();
 const uiLogClients = new Set();
 let rateLimitCache = { at: 0, value: null };
 let rateLimitPending = null;
+
+function findPortableCodexExe() {
+  const vendorRoot = path.join(root, "tools", "codex", "vendor");
+  const preferred = process.arch === "arm64"
+    ? ["aarch64-pc-windows-msvc", "x86_64-pc-windows-msvc"]
+    : ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"];
+  for (const triple of preferred) {
+    const candidate = path.join(vendorRoot, triple, "bin", "codex.exe");
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  try {
+    for (const entry of fs.readdirSync(vendorRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const candidate = path.join(vendorRoot, entry.name, "bin", "codex.exe");
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  } catch {}
+  return path.join(vendorRoot, preferred[0], "bin", "codex.exe");
+}
 
 function ensureDirs() {
   for (const dir of [workspaceRoot, codexHome, npmCache, uploadsDir, artifactsDir]) {

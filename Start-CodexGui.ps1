@@ -13,7 +13,6 @@ $NodeDir = Join-Path $Root "tools\node"
 $PythonDir = Join-Path $Root "tools\python"
 $NpmPrefix = Join-Path $Root "tools\npm-global"
 $NpmCache = Join-Path $Root "tools\npm-cache"
-$PortableCodexExe = Join-Path $Root "tools\codex\vendor\x86_64-pc-windows-msvc\bin\codex.exe"
 $CodexHome = Join-Path $Root "data\codex-home"
 $WorkspaceDir = Join-Path $Root "workspaces"
 $GuiServer = Join-Path $Root "gui\server.js"
@@ -45,6 +44,31 @@ if (Test-Path $StatusLineScript) {
     & $StatusLineScript -Quiet
 }
 
+function Get-PortableCodexExe {
+    $vendorRoot = Join-Path $Root "tools\codex\vendor"
+    if (-not (Test-Path $vendorRoot)) {
+        return ""
+    }
+    $archText = @($env:PROCESSOR_ARCHITEW6432, $env:PROCESSOR_ARCHITECTURE) -join " "
+    $preferred = if ($archText -match "ARM64") {
+        @("aarch64-pc-windows-msvc", "x86_64-pc-windows-msvc")
+    }
+    else {
+        @("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
+    }
+    foreach ($triple in $preferred) {
+        $candidate = Join-Path $vendorRoot "$triple\bin\codex.exe"
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+    $fallback = Get-ChildItem -Path $vendorRoot -Recurse -Filter "codex.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($fallback) {
+        return $fallback.FullName
+    }
+    return ""
+}
+
 Add-PathFirst $NodeDir
 Add-PathFirst $NpmPrefix
 if (Test-Path (Join-Path $PythonDir "python.exe")) {
@@ -59,6 +83,7 @@ $env:CODEX_HOME = $CodexHome
 $env:PORTABLE_CODEX_ROOT = $Root
 
 $codexCmd = Join-Path $NpmPrefix "codex.cmd"
+$PortableCodexExe = Get-PortableCodexExe
 if (-not (Test-Path $codexCmd) -and -not (Test-Path $PortableCodexExe)) {
     Write-Host "Codex CLI is not installed in this portable kit yet."
     Write-Host "Run:"

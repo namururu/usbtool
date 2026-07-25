@@ -5,6 +5,8 @@ param(
     [switch]$IncludeAuth,
     [switch]$IncludeWorkspaces,
     [switch]$SkipCodexCliUpdate,
+    [ValidateSet("x64", "arm64", "auto")]
+    [string]$RuntimeArch = "x64",
     [switch]$CleanOutput
 )
 
@@ -14,6 +16,35 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $OutputPath = if ([System.IO.Path]::IsPathRooted($OutputDir)) { $OutputDir } else { Join-Path $Root $OutputDir }
 $AppOutput = Join-Path $OutputPath "portable-codex-usb"
 $IncludeFile = Join-Path $Root ".portable-update-include"
+
+function Resolve-CodexRuntimeArch {
+    param([string]$Value)
+    if ($Value -and $Value -ne "auto") {
+        return $Value
+    }
+    $archValues = @(
+        $env:PROCESSOR_ARCHITEW6432,
+        $env:PROCESSOR_ARCHITECTURE,
+        [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString(),
+        [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+    ) | Where-Object { $_ }
+    if (($archValues -join " ") -match "ARM64|Arm64") {
+        return "arm64"
+    }
+    return "x64"
+}
+
+function Get-CodexVendorTriple {
+    param([string]$Arch)
+    if ($Arch -eq "arm64") {
+        return "aarch64-pc-windows-msvc"
+    }
+    return "x86_64-pc-windows-msvc"
+}
+
+$ResolvedRuntimeArch = Resolve-CodexRuntimeArch $RuntimeArch
+$NativePackageSuffix = "win32-$ResolvedRuntimeArch"
+$NativeVendorTriple = Get-CodexVendorTriple $ResolvedRuntimeArch
 
 function Assert-UnderRootOrExplicit {
     param([string]$PathToCheck)
@@ -87,8 +118,8 @@ if ($CleanOutput -and (Test-Path $OutputPath)) {
 if ($IncludeRuntime -and -not $SkipCodexCliUpdate) {
     $updateCodex = Join-Path $Root "Update-Codex.ps1"
     if (Test-Path $updateCodex) {
-        Write-Host "Checking latest Codex CLI before building runtime..."
-        & $updateCodex -Quiet -CheckIntervalHours 0
+        Write-Host "Checking latest Codex CLI before building $ResolvedRuntimeArch runtime..."
+        & $updateCodex -Quiet -CheckIntervalHours 0 -RuntimeArch $ResolvedRuntimeArch
     }
     else {
         Write-Warning "Update-Codex.ps1 was not found. Bundled Codex CLI may be stale."
@@ -123,8 +154,12 @@ elseif ($IncludeRuntime) {
         Copy-Item -LiteralPath $sourceNode -Destination $destNode -Force
     }
 
-    $sourceCodexVendor = Join-Path $Root "tools\npm-global\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc"
-    $destCodexVendor = Join-Path $AppOutput "tools\codex\vendor\x86_64-pc-windows-msvc"
+    $sourceCodexVendor = Join-Path $Root "tools\codex\vendor\$NativeVendorTriple"
+    $sourceNpmCodexVendor = Join-Path $Root "tools\npm-global\node_modules\@openai\codex\node_modules\@openai\codex-$NativePackageSuffix\vendor\$NativeVendorTriple"
+    $destCodexVendor = Join-Path $AppOutput "tools\codex\vendor\$NativeVendorTriple"
+    if (-not (Test-Path $sourceCodexVendor) -and (Test-Path $sourceNpmCodexVendor)) {
+        $sourceCodexVendor = $sourceNpmCodexVendor
+    }
     if (Test-Path $sourceCodexVendor) {
         Copy-DirectoryRobust -Source $sourceCodexVendor -Destination $destCodexVendor
     }
@@ -168,10 +203,10 @@ $runtimeNote = if ($IncludeRuntime -and $FullRuntime) {
 }
 elseif ($IncludeRuntime) {
     if (Test-Path (Join-Path $Root "tools\python\python.exe")) {
-        "- Minimal runtime node.exe, native codex.exe, and portable Python"
+        "- Minimal runtime node.exe, native $ResolvedRuntimeArch codex.exe, and portable Python"
     }
     else {
-        "- Minimal runtime node.exe and native codex.exe"
+        "- Minimal runtime node.exe and native $ResolvedRuntimeArch codex.exe"
     }
 }
 else {

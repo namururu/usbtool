@@ -4,7 +4,7 @@ This folder is meant to be copied to the root of a USB drive and run from PowerS
 
 It keeps the moving pieces inside the USB folder:
 
-- `tools/node`: portable Node.js for Windows x64
+- `tools/node`: portable Node.js for Windows x64 by default
 - `tools/python`: optional portable Python embeddable runtime
 - `tools/npm-global`: npm global packages, including `@openai/codex`
 - `tools/npm-cache`: npm cache
@@ -125,7 +125,7 @@ To pass arguments through to Codex:
 .\Update-Codex.ps1
 ```
 
-`Build-UsbCarry.ps1 -IncludeRuntime` also checks the latest Codex CLI before copying the runtime, so newly built USB carry folders start with the current native Windows CLI. Startup scripts keep running `Update-Codex.ps1 -Auto -Quiet`; after carrying the USB, the CLI is checked at most once per 12 hours and updated when npm publishes a newer version.
+`Build-UsbCarry.ps1 -IncludeRuntime` also checks the latest Codex CLI before copying the runtime, so newly built USB carry folders start with the current native Windows CLI. Carry builds default to Windows x64 even when run from a Windows ARM64 development machine. Use `-RuntimeArch arm64` only when building an ARM64-targeted USB. Startup scripts keep running `Update-Codex.ps1 -Auto -Quiet`; after carrying the USB, the CLI is checked at most once per 12 hours and updated when npm publishes a newer version for the current machine.
 
 ## Self Update Channel
 
@@ -215,6 +215,7 @@ usb\portable-codex-usb
 Options:
 
 - `-IncludeRuntime`: update/check Codex CLI first, then include minimal `node.exe`, native `codex.exe`, and `tools\python` when installed
+- `-RuntimeArch x64|arm64|auto`: choose the bundled Codex CLI architecture. Default is `x64` for USB targets; `auto` follows the build machine.
 - `-FullRuntime`: with `-IncludeRuntime`, include full Node/npm and npm-installed Codex CLI instead
 - `-SkipCodexCliUpdate`: with `-IncludeRuntime`, skip the build-time Codex CLI update check
 - `-IncludeAuth`: include `data\codex-home` login/session state
