@@ -126,6 +126,14 @@ if ($IncludeRuntime -and -not $SkipCodexCliUpdate) {
     }
 }
 
+if ($IncludeRuntime) {
+    $cloudflaredInstaller = Join-Path $Root "Install-Cloudflared.ps1"
+    if (Test-Path $cloudflaredInstaller) {
+        Write-Host "Preparing public-link runtime..."
+        & $cloudflaredInstaller -Quiet
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $AppOutput | Out-Null
 
 $patterns = Get-Content $IncludeFile |
@@ -174,6 +182,14 @@ elseif ($IncludeRuntime) {
     }
 
     New-Item -ItemType Directory -Force -Path (Join-Path $AppOutput "tools\npm-cache") | Out-Null
+}
+
+if ($IncludeRuntime) {
+    $sourceCloudflared = Join-Path $Root "tools\cloudflared"
+    $destCloudflared = Join-Path $AppOutput "tools\cloudflared"
+    if (Test-Path (Join-Path $sourceCloudflared "cloudflared.exe")) {
+        Copy-DirectoryRobust -Source $sourceCloudflared -Destination $destCloudflared
+    }
 }
 
 if ($IncludeAuth) {

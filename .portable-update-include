@@ -7,6 +7,8 @@ Set-CodexStatusLine.ps1
 Start-Codex.ps1
 Start-CodexGui.ps1
 Start-CodexGuiAdmin.ps1
+Start-Public.ps1
+Install-Cloudflared.ps1
 Stop-CodexGui.ps1
 Update-Codex.ps1
 Update-Self.ps1
@@ -18,6 +20,7 @@ start.bat
 start-admin.bat
 start-lan.bat
 start-lan-admin.bat
+start-public.bat
 clean.bat
 update.json
 gui/**

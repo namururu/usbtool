@@ -72,6 +72,8 @@ For temporary sharing with another trusted machine on the same LAN, use:
 
 or double-click `start-lan.bat`. The launcher prints a Share URL such as `http://192.168.x.x:41731` and a short password. Anyone with that URL and password can operate the GUI and Codex session, so share it only on trusted networks and stop the GUI when finished.
 
+For a temporary Internet link with no account or router setup, double-click `start-public.bat`. It prints a random `trycloudflare.com` URL and a random password. Keep the window open while sharing and press Ctrl+C to stop. The URL changes each time.
+
 The GUI sends the first prompt with the Japanese/autonomy base instructions. Follow-up prompts resume the same recorded Codex session for that workspace, so only your new message is sent.
 
 This is not a full embedded TUI. It is a chat-like wrapper over `codex exec` and `codex exec resume`. Use `Start-Codex.ps1` when you need the native interactive terminal UI.

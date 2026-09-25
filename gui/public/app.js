@@ -803,26 +803,32 @@ async function runCodex() {
   currentJob = body.id;
   seenEventIds = new Set();
   streamFinished = false;
-  stream = new EventSource(`/api/jobs/${currentJob}/events`);
+  const pollingJob = currentJob;
+  const usePolling = location.hostname.endsWith(".trycloudflare.com");
+  stream = usePolling ? null : new EventSource(`/api/jobs/${currentJob}/events`);
+  const jobHandlers = new Map();
+  const onJobEvent = (type, handler) => {
+    jobHandlers.set(type, handler);
+    if (stream) stream.addEventListener(type, handler);
+  };
 
-  stream.addEventListener("meta", (event) => {
+  onJobEvent("meta", (event) => {
     if (!shouldHandleEvent(event)) return;
-    streamFinished = true;
     const data = JSON.parse(event.data);
     currentRun.meta = data;
     el.commandPreview.textContent = data.command || "";
     if (data.sessionId) el.sessionState.textContent = `session: ${data.sessionId}`;
   });
-  stream.addEventListener("session", (event) => {
+  onJobEvent("session", (event) => {
     if (!shouldHandleEvent(event)) return;
     const data = JSON.parse(event.data);
     el.sessionState.textContent = `session: ${data.id}`;
   });
-  stream.addEventListener("stdout", (event) => {
+  onJobEvent("stdout", (event) => {
     if (!shouldHandleEvent(event)) return;
     appendAssistantText(JSON.parse(event.data));
   });
-  stream.addEventListener("stderr", (event) => {
+  onJobEvent("stderr", (event) => {
     if (!shouldHandleEvent(event)) return;
     const text = JSON.parse(event.data);
     currentRun.stderr += text;
@@ -838,19 +844,20 @@ async function runCodex() {
     if (/(\bERROR\b|Unauthorized|panic|Exception)/i.test(text)) currentRun.hadError = true;
     appendAssistantText(text);
   });
-  stream.addEventListener("error", (event) => {
+  onJobEvent("error", (event) => {
     if (!shouldHandleEvent(event)) return;
     if (event.data) {
       currentRun.hadError = true;
       appendLine(JSON.parse(event.data), "error");
     }
   });
-  stream.addEventListener("artifacts", (event) => {
+  onJobEvent("artifacts", (event) => {
     if (!shouldHandleEvent(event)) return;
     appendArtifactCards(JSON.parse(event.data));
   });
-  stream.addEventListener("stop", (event) => {
+  onJobEvent("stop", (event) => {
     if (!shouldHandleEvent(event)) return;
+    streamFinished = true;
     appendLine("停止しました。", "system");
     if (stream) {
       stream.close();
@@ -860,8 +867,9 @@ async function runCodex() {
     currentRun = null;
     setRunning(false);
   });
-  stream.addEventListener("exit", async (event) => {
+  onJobEvent("exit", async (event) => {
     if (!shouldHandleEvent(event)) return;
+    streamFinished = true;
     const data = JSON.parse(event.data);
     const failed = data.code !== 0 || data.status !== "done";
     if (failed) {
@@ -882,24 +890,47 @@ async function runCodex() {
       }).catch(() => {});
       await clearCurrentSessionQuietly();
     }
-    stream.close();
-    stream = null;
-    currentJob = null;
-    currentRun = null;
-    setRunning(false);
-    await refreshStatus();
-  });
-  stream.onerror = () => {
-    if (streamFinished) return;
     if (stream) {
-      appendLine("イベント接続が切れました。", "error");
       stream.close();
       stream = null;
     }
     currentJob = null;
     currentRun = null;
     setRunning(false);
+    await refreshStatus();
+  });
+  const pollJob = async () => {
+    while (currentJob === pollingJob && !streamFinished) {
+      try {
+        const pollResponse = await fetch(`/api/jobs/${pollingJob}`);
+        if (!pollResponse.ok) throw new Error("ジョブ状態を取得できませんでした。");
+        const pollBody = await pollResponse.json();
+        for (const item of pollBody.job?.events || []) {
+          const handler = jobHandlers.get(item.type);
+          if (handler) {
+            await handler({ data: JSON.stringify(item.data), lastEventId: String(item.id) });
+          }
+          if (currentJob !== pollingJob) break;
+        }
+      } catch (error) {
+        appendLine(error.message, "error");
+      }
+      if (currentJob === pollingJob && !streamFinished) {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
+    }
   };
+
+  if (stream) {
+    stream.onerror = () => {
+      if (streamFinished) return;
+      stream.close();
+      stream = null;
+      pollJob();
+    };
+  } else {
+    pollJob();
+  }
 }
 
 async function stopCodex() {
