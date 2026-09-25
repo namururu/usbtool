@@ -29,6 +29,8 @@ jobs:
           .\Install-PythonRuntime.ps1 -Force
           .\Build-UsbCarry.ps1 -CleanOutput -IncludeRuntime -RuntimeArch x64
           Compress-Archive -Path .\usb\portable-codex-usb\* -DestinationPath .\dist\usb.zip -CompressionLevel Optimal -Force
+          if (-not (Test-Path .\dist\usb.zip)) { throw "usb.zip was not created." }
+          $global:LASTEXITCODE = 0
 
       - name: Publish release assets
         shell: pwsh
