@@ -35,7 +35,7 @@ const hostArgIndex = args.indexOf("--host");
 const host = hostArgIndex >= 0 ? String(args[hostArgIndex + 1] || "127.0.0.1") : String(process.env.HOST || "127.0.0.1");
 const lanTokenArgIndex = args.indexOf("--lan-token");
 const lanPassword = lanTokenArgIndex >= 0 ? String(args[lanTokenArgIndex + 1] || "") : String(process.env.PORTABLE_CODEX_LAN_TOKEN || "");
-const allowLan = Boolean(lanPassword);
+const allowLan = host === "0.0.0.0" || host === "::";
 const jobs = new Map();
 const uiLogClients = new Set();
 let rateLimitCache = { at: 0, value: null };
@@ -93,9 +93,6 @@ function readBody(req, maxBytes = 50_000_000) {
 }
 
 function isLocalRequest(req) {
-  if (req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.headers["x-real-ip"]) {
-    return false;
-  }
   const remote = req.socket.remoteAddress;
   return remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
 }
@@ -119,8 +116,7 @@ function authorizeRequest(req, res, url) {
     || getCookie(req, "portable_codex_lan_password")
     || getCookie(req, "portable_codex_token");
   if (password !== lanPassword) return false;
-  const secure = String(req.headers["x-forwarded-proto"] || "").toLowerCase() === "https" ? "; Secure" : "";
-  res.setHeader("set-cookie", `portable_codex_lan_password=${encodeURIComponent(lanPassword)}; Path=/; HttpOnly; SameSite=Lax${secure}`);
+  res.setHeader("set-cookie", `portable_codex_lan_password=${encodeURIComponent(lanPassword)}; Path=/; SameSite=Lax`);
   return true;
 }
 
@@ -1403,17 +1399,6 @@ const server = http.createServer(async (req, res) => {
       }
       stopJob(job);
       sendJson(res, 200, { ok: true });
-      return;
-    }
-
-    if (req.method === "GET" && /^\/api\/jobs\/[^/]+$/.test(url.pathname)) {
-      const id = url.pathname.split("/")[3];
-      const job = jobs.get(id);
-      if (!job) {
-        sendJson(res, 404, { error: "Job not found." });
-        return;
-      }
-      sendJson(res, 200, { job: summarizeJob(job) });
       return;
     }
 

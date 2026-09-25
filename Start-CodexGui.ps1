@@ -2,7 +2,6 @@ param(
     [int]$Port = 41731,
     [switch]$NoBrowser,
     [switch]$Lan,
-    [switch]$Public,
     [string]$LanPassword = "",
     [string]$LanToken = ""
 )
@@ -96,12 +95,11 @@ if (-not (Test-Path $GuiServer)) {
     throw "GUI server is missing: $GuiServer"
 }
 
-$ShareEnabled = $Lan -or $Public
 $BindHost = if ($Lan) { "0.0.0.0" } else { "127.0.0.1" }
 if ($LanToken -and -not $LanPassword) {
     $LanPassword = $LanToken
 }
-if ($ShareEnabled -and -not $LanPassword) {
+if ($Lan -and -not $LanPassword) {
     $LanPassword = New-SharePassword
 }
 $LocalUrl = "http://127.0.0.1:$Port"
@@ -147,7 +145,7 @@ if (-not $NoBrowser) {
 }
 
 $serverArgs = @($GuiServer, "--port", $Port, "--host", $BindHost)
-if ($ShareEnabled) {
+if ($Lan) {
     $serverArgs += @("--lan-token", $LanPassword)
 }
 & (Join-Path $NodeDir "node.exe") @serverArgs
