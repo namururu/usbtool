@@ -1,5 +1,7 @@
 # Portable Codex CLI for Windows PowerShell
 
+Complete Windows x64 download: https://github.com/namururu/usbtool/releases/download/auto-latest/usb.zip
+
 This folder is meant to be copied to the root of a USB drive and run from PowerShell.
 
 It keeps the moving pieces inside the USB folder:

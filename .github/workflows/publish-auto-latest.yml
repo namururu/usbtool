@@ -22,6 +22,14 @@ jobs:
           PORTABLE_CODEX_RELEASE_TAG: auto-latest
         run: .\Build-UpdateZip.ps1 -WriteManifest
 
+      - name: Build complete Windows x64 package
+        shell: pwsh
+        run: |
+          .\Install-UsbCodex.ps1 -ForceNode -ForceCodex
+          .\Install-PythonRuntime.ps1 -Force
+          .\Build-UsbCarry.ps1 -CleanOutput -IncludeRuntime -RuntimeArch x64
+          Compress-Archive -Path .\usb\portable-codex-usb\* -DestinationPath .\dist\usb.zip -CompressionLevel Optimal -Force
+
       - name: Publish release assets
         shell: pwsh
         env:
@@ -32,4 +40,4 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --title "auto-latest" --notes "Automatically updated from main."
           }
-          gh release upload $tag .\dist\portable-codex-usb.zip .\dist\update.json --clobber
+          gh release upload $tag .\dist\portable-codex-usb.zip .\dist\update.json .\dist\usb.zip --clobber
