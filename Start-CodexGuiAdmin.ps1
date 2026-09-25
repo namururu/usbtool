@@ -36,6 +36,7 @@ if (-not (Test-IsAdministrator)) {
 }
 
 Set-Location $Root
+$env:PORTABLE_CODEX_NO_DAEMON = "1"
 
 $updateScript = Join-Path $Root "Update-Self.ps1"
 if (Test-Path $updateScript) {

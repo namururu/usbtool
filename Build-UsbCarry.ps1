@@ -185,7 +185,9 @@ if ($IncludeAuth) {
     }
 }
 else {
-    New-Item -ItemType Directory -Force -Path (Join-Path $AppOutput "data\codex-home") | Out-Null
+    $dest = Join-Path $AppOutput "data\codex-home"
+    if (Test-Path $dest) { Remove-DirectoryRobust $dest }
+    New-Item -ItemType Directory -Force -Path $dest | Out-Null
 }
 
 if ($IncludeWorkspaces) {
@@ -195,7 +197,9 @@ if ($IncludeWorkspaces) {
     }
 }
 else {
-    New-Item -ItemType Directory -Force -Path (Join-Path $AppOutput "workspaces") | Out-Null
+    $dest = Join-Path $AppOutput "workspaces"
+    if (Test-Path $dest) { Remove-DirectoryRobust $dest }
+    New-Item -ItemType Directory -Force -Path $dest | Out-Null
 }
 
 $runtimeNote = if ($IncludeRuntime -and $FullRuntime) {

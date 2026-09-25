@@ -18,7 +18,9 @@ $WorkspaceDir = Join-Path $Root "workspaces"
 $GuiServer = Join-Path $Root "gui\server.js"
 
 function New-SharePassword {
-    return (Get-Random -Minimum 100000 -Maximum 999999).ToString()
+    $bytes = New-Object byte[] 12
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    return ([Convert]::ToHexString($bytes)).ToLowerInvariant()
 }
 
 function Get-LanAddress {

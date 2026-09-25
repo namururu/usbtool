@@ -86,4 +86,9 @@ Write-Host "CODEX_HOME=$env:CODEX_HOME"
 Write-Host "Workspace=$(Get-Location)"
 Write-Host ""
 
-& $codexRunner @CodexArgs
+$effectiveCodexArgs = @($CodexArgs)
+if ($env:PORTABLE_CODEX_NO_DAEMON -eq "1" -and $effectiveCodexArgs -notcontains "--no-daemon") {
+    $effectiveCodexArgs = @("--no-daemon") + $effectiveCodexArgs
+}
+
+& $codexRunner @effectiveCodexArgs

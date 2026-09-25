@@ -36,6 +36,7 @@ const host = hostArgIndex >= 0 ? String(args[hostArgIndex + 1] || "127.0.0.1") :
 const lanTokenArgIndex = args.indexOf("--lan-token");
 const lanPassword = lanTokenArgIndex >= 0 ? String(args[lanTokenArgIndex + 1] || "") : String(process.env.PORTABLE_CODEX_LAN_TOKEN || "");
 const allowLan = host === "0.0.0.0" || host === "::";
+const noDaemon = process.env.PORTABLE_CODEX_NO_DAEMON === "1";
 const jobs = new Map();
 const uiLogClients = new Set();
 let rateLimitCache = { at: 0, value: null };
@@ -101,12 +102,33 @@ function getCookie(req, name) {
   const cookies = String(req.headers.cookie || "").split(";");
   for (const cookie of cookies) {
     const [key, ...rest] = cookie.trim().split("=");
-    if (key === name) return decodeURIComponent(rest.join("=") || "");
+    if (key === name) {
+      try {
+        return decodeURIComponent(rest.join("=") || "");
+      } catch {
+        return "";
+      }
+    }
   }
   return "";
 }
 
+function hasTrustedBrowserOrigin(req) {
+  const origin = String(req.headers.origin || "");
+  if (!origin) return true;
+  try {
+    const parsed = new URL(origin);
+    const expectedHost = String(req.headers.host || "").toLowerCase();
+    return (parsed.protocol === "http:" || parsed.protocol === "https:")
+      && parsed.host.toLowerCase() === expectedHost;
+  } catch {
+    return false;
+  }
+}
+
 function authorizeRequest(req, res, url) {
+  if (req.headers.forwarded || req.headers["x-forwarded-for"] || req.headers["cf-connecting-ip"]) return false;
+  if (req.method !== "GET" && req.method !== "HEAD" && !hasTrustedBrowserOrigin(req)) return false;
   if (isLocalRequest(req)) return true;
   if (!allowLan || !lanPassword) return false;
   const password = url.searchParams.get("pass")
@@ -116,7 +138,7 @@ function authorizeRequest(req, res, url) {
     || getCookie(req, "portable_codex_lan_password")
     || getCookie(req, "portable_codex_token");
   if (password !== lanPassword) return false;
-  res.setHeader("set-cookie", `portable_codex_lan_password=${encodeURIComponent(lanPassword)}; Path=/; SameSite=Lax`);
+  res.setHeader("set-cookie", `portable_codex_lan_password=${encodeURIComponent(lanPassword)}; Path=/; HttpOnly; SameSite=Strict`);
   return true;
 }
 
@@ -188,13 +210,20 @@ function saveUiLog(events) {
 }
 
 function pushUiLog(event) {
+  const rawImage = event.image && typeof event.image === "object" ? event.image : null;
+  const imageUrl = String(rawImage?.url || "");
+  const allowedImageUrl = /^\/api\/(?:artifacts|generated-images|uploads-file)\//.test(imageUrl);
   const entry = {
     id: crypto.randomUUID(),
     at: new Date().toISOString(),
     type: event.type || "text",
     kind: event.kind || "",
     text: String(event.text || ""),
-    image: event.image || null,
+    image: allowedImageUrl ? {
+      name: String(rawImage.name || "image"),
+      url: imageUrl,
+      mtimeMs: Number(rawImage.mtimeMs) || 0,
+    } : null,
     source: String(event.source || ""),
   };
   const events = loadUiLog();
@@ -504,11 +533,12 @@ function addSharedCodexOptions(codexArgs, input) {
 }
 
 function getCodexRunnerForAppServer() {
+  const appServerArgs = [...(noDaemon ? ["--no-daemon"] : []), "app-server", "--listen", "stdio://"];
   if (fs.existsSync(portableCodexExe)) {
-    return { command: portableCodexExe, args: ["app-server", "--listen", "stdio://"] };
+    return { command: portableCodexExe, args: appServerArgs };
   }
   if (fs.existsSync(codexJs) && fs.existsSync(nodeExe)) {
-    return { command: nodeExe, args: [codexJs, "app-server", "--listen", "stdio://"] };
+    return { command: nodeExe, args: [codexJs, ...appServerArgs] };
   }
   return null;
 }
@@ -626,9 +656,12 @@ function buildPortableEnv() {
 
 function buildCodexArgs(input, workspace, prompt, session) {
   const isResume = Boolean(session?.id && input.resume !== false);
-  const codexArgs = isResume
-    ? ["exec", "resume"]
-    : ["exec", "--cd", workspace, "--skip-git-repo-check", "--color", "never"];
+  const codexArgs = [
+    ...(noDaemon ? ["--no-daemon"] : []),
+    ...(isResume
+      ? ["exec", "resume"]
+      : ["exec", "--cd", workspace, "--skip-git-repo-check", "--color", "never"]),
+  ];
   const permission = addSharedCodexOptions(codexArgs, input);
 
   if (isResume) codexArgs.push("--skip-git-repo-check");
@@ -862,16 +895,17 @@ function openCodexLoginShell() {
 
 function runCodexLogout() {
   const env = buildPortableEnv();
+  const logoutArgs = [...(noDaemon ? ["--no-daemon"] : []), "logout"];
   let result;
   if (fs.existsSync(portableCodexExe)) {
-    result = spawnSync(portableCodexExe, ["logout"], {
+    result = spawnSync(portableCodexExe, logoutArgs, {
       cwd: root,
       env,
       encoding: "utf8",
       windowsHide: true,
     });
   } else if (fs.existsSync(codexCmd)) {
-    result = spawnSync("cmd.exe", ["/c", codexCmd, "logout"], {
+    result = spawnSync("cmd.exe", ["/c", codexCmd, ...logoutArgs], {
       cwd: root,
       env,
       encoding: "utf8",
@@ -949,7 +983,12 @@ function serveStatic(req, res) {
       ".js": "application/javascript; charset=utf-8",
       ".svg": "image/svg+xml",
     }[ext] || "application/octet-stream";
-    res.writeHead(200, { "content-type": type, "cache-control": "no-store" });
+    res.writeHead(200, {
+      "content-type": type,
+      "cache-control": "no-store",
+      "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      "x-content-type-options": "nosniff",
+    });
     res.end(data);
   });
 }
@@ -1072,6 +1111,7 @@ function serveFileFromDir(req, res, baseDir, name) {
   }
 
   const ext = path.extname(resolvedFile).toLowerCase();
+  const activeContent = ext === ".html" || ext === ".htm" || ext === ".svg";
   const type = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -1086,7 +1126,13 @@ function serveFileFromDir(req, res, baseDir, name) {
     ".md": "text/markdown; charset=utf-8",
     ".json": "application/json; charset=utf-8",
   }[ext] || "application/octet-stream";
-  res.writeHead(200, { "content-type": type, "cache-control": "no-store" });
+  const headers = {
+    "content-type": activeContent ? "application/octet-stream" : type,
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+  };
+  if (activeContent) headers["content-disposition"] = `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(resolvedFile))}`;
+  res.writeHead(200, headers);
   fs.createReadStream(resolvedFile).pipe(res);
 }
 

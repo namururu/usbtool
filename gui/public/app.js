@@ -79,7 +79,7 @@ function looksLikeImageFollowupPrompt(text) {
 function modelForRequest(prompt) {
   const selected = el.model.value;
   if (selected === "gpt-5.3-codex-spark" && looksLikeImageGenerationPrompt(prompt)) {
-    return "gpt-5.5";
+    return "gpt-6-astra";
   }
   return selected;
 }
@@ -216,9 +216,12 @@ function formatResetLabel(window) {
 function formatRateLimitBucket(bucket, key = "") {
   const rawName = bucket?.limitName || bucket?.limitId || key || "usage";
   const lowerName = String(rawName).toLowerCase();
-  const name = lowerName.includes("spark") || lowerName.includes("sparc")
-    ? "Spark"
-    : (lowerName.includes("5.5") || lowerName.includes("5_5") || lowerName.includes("gpt-5") ? "5.5" : rawName);
+  let name = rawName;
+  if (lowerName.includes("spark") || lowerName.includes("sparc")) name = "Spark";
+  else if (lowerName.includes("astra")) name = "Astra";
+  else if (lowerName.includes("sol")) name = "Sol";
+  else if (lowerName.includes("luna")) name = "Luna";
+  else if (lowerName.includes("5.5") || lowerName.includes("5_5")) name = "5.5";
   const primary = formatLimitWindow(bucket?.primary, "primary");
   const secondary = formatLimitWindow(bucket?.secondary, "week");
   return `${name} ${primary} ${secondary}`;
@@ -476,19 +479,26 @@ async function uploadPendingFiles() {
 }
 
 function appendImageCard(image, options = {}) {
+  if (!image || !/^\/api\/(?:artifacts|generated-images|uploads-file)\//.test(String(image.url || ""))) return;
   const marker = `[image:${image.name}]`;
   if (el.terminal.textContent.includes(marker)) return;
   writeImageSession(image);
   const url = `${image.url}?t=${Math.round(image.mtimeMs)}`;
   append(`\n${marker}\n`, "", { sync: false });
-  el.terminal.insertAdjacentHTML("beforeend", `
-    <div class="image-card">
-      <a href="${url}" target="_blank" rel="noreferrer">
-        <img src="${url}" alt="${escapeHtml(image.name)}">
-      </a>
-      <div>${escapeHtml(image.name)}</div>
-    </div>
-  `);
+  const card = document.createElement("div");
+  card.className = "image-card";
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  const preview = document.createElement("img");
+  preview.src = url;
+  preview.alt = String(image.name || "image");
+  link.append(preview);
+  const caption = document.createElement("div");
+  caption.textContent = String(image.name || "image");
+  card.append(link, caption);
+  el.terminal.append(card);
   el.terminal.scrollTop = el.terminal.scrollHeight;
   if (options.sync !== false) {
     syncUiLog({ type: "image", image });

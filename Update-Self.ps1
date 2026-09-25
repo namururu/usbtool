@@ -158,6 +158,9 @@ if (-not $Force -and -not $remoteNewerVersion -and -not $sameVersionNewBuild) {
 if (-not $manifest.zipUrl) {
     throw "Manifest is missing zipUrl."
 }
+if (-not ([string]$manifest.sha256 -match '^[0-9a-fA-F]{64}$')) {
+    throw "Manifest must contain a valid SHA256 hash."
+}
 
 $zipPath = Join-Path $TmpDir "update.zip"
 Write-Info "Downloading Portable Codex GUI $remoteVersion..."
@@ -168,12 +171,10 @@ else {
     Invoke-WebRequest -Uri $manifest.zipUrl -OutFile $zipPath -UseBasicParsing
 }
 
-if ($manifest.sha256) {
-    $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $expectedHash = ([string]$manifest.sha256).ToLowerInvariant()
-    if ($actualHash -ne $expectedHash) {
-        throw "Update SHA256 mismatch. Expected $expectedHash but got $actualHash."
-    }
+$actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$expectedHash = ([string]$manifest.sha256).ToLowerInvariant()
+if ($actualHash -ne $expectedHash) {
+    throw "Update SHA256 mismatch. Expected $expectedHash but got $actualHash."
 }
 
 $extractDir = Join-Path $TmpDir "extract"
