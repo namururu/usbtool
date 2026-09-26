@@ -18,6 +18,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check Windows PowerShell 5.1 compatibility
+        shell: powershell
+        run: .\tests\Test-PasswordCompatibility.ps1
+
       - name: Build update package
         shell: pwsh
         env:

@@ -21,8 +21,14 @@ $GuiServer = Join-Path $Root "gui\server.js"
 
 function New-SharePassword {
     $bytes = New-Object byte[] 12
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-    return ([Convert]::ToHexString($bytes)).ToLowerInvariant()
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
+    return ([BitConverter]::ToString($bytes)).Replace("-", "").ToLowerInvariant()
 }
 
 function Get-LanAddress {

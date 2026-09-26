@@ -15,8 +15,14 @@ $ConfigFile = Join-Path $DataDir "remote-console.json"
 
 function New-RemotePassword {
     $bytes = New-Object byte[] 18
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-    return ([Convert]::ToHexString($bytes)).ToLowerInvariant()
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
+    return ([BitConverter]::ToString($bytes)).Replace("-", "").ToLowerInvariant()
 }
 
 if ($PublicName -notmatch '^[A-Za-z0-9.-]+$') {
