@@ -70,6 +70,8 @@ http://misao.local:41731
 
 設定は `data/remote-console.json` に保存され、再起動後も同じ URL とパスワードを使用します。起動後はバックグラウンドで動くため、`Remote console is running in the background.` と表示されたら黒い画面を閉じて構いません。稼働ログは `data/remote-console.log`、エラーは `data/remote-console.err.log` に保存されます。PCを再起動した場合は `start-remote.bat` をもう一度実行してください。
 
+起動用の黒い画面は、成功・失敗の結果を確認してキーを押すまで残ります。`data/remote-startup.json` に直近の起動結果を記録します。`running` はこのアプリのHTTP応答まで確認できた状態です。`Local=` は設置PC自身、`LAN=` は同じLANの別PCから接続するURLです。`misao.local` の名前登録は自動では行いません。
+
 パスワードを作り直す場合は次を実行します。
 
 ```powershell
