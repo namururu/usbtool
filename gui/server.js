@@ -37,10 +37,22 @@ const lanTokenArgIndex = args.indexOf("--lan-token");
 const lanPassword = lanTokenArgIndex >= 0 ? String(args[lanTokenArgIndex + 1] || "") : String(process.env.PORTABLE_CODEX_LAN_TOKEN || "");
 const allowLan = host === "0.0.0.0" || host === "::";
 const noDaemon = process.env.PORTABLE_CODEX_NO_DAEMON === "1";
+const remoteConsole = args.includes("--remote-console");
+const publicNameArgIndex = args.indexOf("--public-name");
+const publicName = publicNameArgIndex >= 0 ? String(args[publicNameArgIndex + 1] || "") : "";
 const jobs = new Map();
 const uiLogClients = new Set();
 let rateLimitCache = { at: 0, value: null };
 let rateLimitPending = null;
+let deviceAuth = {
+  status: "idle",
+  output: "",
+  verificationUrl: "",
+  userCode: "",
+  startedAt: null,
+  updatedAt: null,
+  child: null,
+};
 
 function findPortableCodexExe() {
   const vendorRoot = path.join(root, "tools", "codex", "vendor");
@@ -654,6 +666,89 @@ function buildPortableEnv() {
   return env;
 }
 
+function stripTerminalCodes(value) {
+  return String(value || "").replace(/\x1B(?:[@-_][0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g, "");
+}
+
+function deviceAuthSnapshot() {
+  return {
+    status: deviceAuth.status,
+    output: deviceAuth.output,
+    verificationUrl: deviceAuth.verificationUrl,
+    userCode: deviceAuth.userCode,
+    startedAt: deviceAuth.startedAt,
+    updatedAt: deviceAuth.updatedAt,
+  };
+}
+
+function updateDeviceAuthOutput(chunk) {
+  const text = stripTerminalCodes(chunk);
+  deviceAuth.output = `${deviceAuth.output}${text}`.slice(-20_000);
+  const urlMatch = deviceAuth.output.match(/https:\/\/auth\.openai\.com\/codex\/device\b/i);
+  const codeMatch = deviceAuth.output.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4,8}\b/);
+  if (urlMatch) deviceAuth.verificationUrl = urlMatch[0];
+  if (codeMatch) deviceAuth.userCode = codeMatch[0];
+  deviceAuth.updatedAt = new Date().toISOString();
+}
+
+function stopDeviceAuth() {
+  if (deviceAuth.child && deviceAuth.status === "running") {
+    deviceAuth.status = "cancelled";
+    deviceAuth.updatedAt = new Date().toISOString();
+    deviceAuth.child.kill();
+  }
+}
+
+function startDeviceAuth() {
+  if (deviceAuth.child && deviceAuth.status === "running") return deviceAuthSnapshot();
+
+  const authArgs = [...(noDaemon ? ["--no-daemon"] : []), "login", "--device-auth"];
+  const env = buildPortableEnv();
+  let command;
+  let commandArgs;
+  if (fs.existsSync(portableCodexExe)) {
+    command = portableCodexExe;
+    commandArgs = authArgs;
+  } else if (fs.existsSync(codexCmd)) {
+    command = "cmd.exe";
+    commandArgs = ["/d", "/s", "/c", codexCmd, ...authArgs];
+  } else {
+    throw new Error("Codex CLIが見つかりません。遠隔ログインを開始できませんでした。");
+  }
+
+  deviceAuth = {
+    status: "running",
+    output: "",
+    verificationUrl: "",
+    userCode: "",
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    child: null,
+  };
+  const child = spawn(command, commandArgs, {
+    cwd: root,
+    env,
+    windowsHide: true,
+    shell: false,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  deviceAuth.child = child;
+  child.stdout.on("data", updateDeviceAuthOutput);
+  child.stderr.on("data", updateDeviceAuthOutput);
+  child.on("error", (error) => {
+    deviceAuth.status = "failed";
+    updateDeviceAuthOutput(`\n${error.message}\n`);
+    deviceAuth.child = null;
+  });
+  child.on("close", (code) => {
+    if (deviceAuth.status === "running") deviceAuth.status = code === 0 ? "succeeded" : "failed";
+    deviceAuth.updatedAt = new Date().toISOString();
+    deviceAuth.child = null;
+    rateLimitCache = { at: 0, value: null };
+  });
+  return deviceAuthSnapshot();
+}
+
 function buildCodexArgs(input, workspace, prompt, session) {
   const isResume = Boolean(session?.id && input.resume !== false);
   const codexArgs = [
@@ -894,6 +989,7 @@ function openCodexLoginShell() {
 }
 
 function runCodexLogout() {
+  stopDeviceAuth();
   const env = buildPortableEnv();
   const logoutArgs = [...(noDaemon ? ["--no-daemon"] : []), "logout"];
   let result;
@@ -1192,6 +1288,9 @@ const server = http.createServer(async (req, res) => {
           checked: Boolean(rateLimitCache.value),
           loggedIn: rateLimitCache.value?.ok === true,
         },
+        remoteConsole,
+        publicName,
+        deviceAuth: deviceAuthSnapshot(),
       });
       return;
     }
@@ -1411,8 +1510,23 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/login") {
+      if (remoteConsole) {
+        sendJson(res, 200, { ok: true, mode: "device", deviceAuth: startDeviceAuth() });
+        return;
+      }
       openCodexLoginShell();
-      sendJson(res, 200, { ok: true });
+      sendJson(res, 200, { ok: true, mode: "local" });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/auth/device") {
+      sendJson(res, 200, { ok: true, deviceAuth: deviceAuthSnapshot() });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/device/stop") {
+      stopDeviceAuth();
+      sendJson(res, 200, { ok: true, deviceAuth: deviceAuthSnapshot() });
       return;
     }
 

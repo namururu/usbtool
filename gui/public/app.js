@@ -39,6 +39,13 @@ const el = {
   sessionState: document.querySelector("#sessionState"),
   tokenState: document.querySelector("#tokenState"),
   rateLimitState: document.querySelector("#rateLimitState"),
+  brandSubtitle: document.querySelector("#brandSubtitle"),
+  deviceAuthPanel: document.querySelector("#deviceAuthPanel"),
+  deviceAuthStatus: document.querySelector("#deviceAuthStatus"),
+  deviceAuthLink: document.querySelector("#deviceAuthLink"),
+  deviceAuthCode: document.querySelector("#deviceAuthCode"),
+  deviceAuthOutput: document.querySelector("#deviceAuthOutput"),
+  deviceAuthCancelBtn: document.querySelector("#deviceAuthCancelBtn"),
 };
 
 let currentJob = null;
@@ -52,12 +59,13 @@ let seenEventIds = new Set();
 let streamFinished = false;
 let runAbortController = null;
 let loggedIn = false;
+let remoteConsole = false;
 const clientId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
 const settingsKey = "portableCodexGuiSettings";
 const imageSessionKey = "portableCodexImageSession";
 
 function isAuthErrorText(text) {
-  return /(401 Unauthorized|Missing bearer|authentication|ログイン|login)/i.test(String(text || ""));
+  return /(401 Unauthorized|Missing bearer|authentication|ログイン|login|access token could not be refreshed|signed out|sign in again)/i.test(String(text || ""));
 }
 
 function isNonPersistedItemError(text) {
@@ -170,6 +178,25 @@ function updateLoginButton(value = loggedIn) {
   loggedIn = Boolean(value);
   el.loginBtn.textContent = loggedIn ? "ログアウト" : "ログイン";
   el.loginBtn.classList.toggle("danger", loggedIn);
+}
+
+function renderDeviceAuth(auth) {
+  if (!el.deviceAuthPanel || !auth) return;
+  const visible = remoteConsole && auth.status !== "idle";
+  el.deviceAuthPanel.hidden = !visible;
+  if (!visible) return;
+  const labels = {
+    running: "ChatGPTで認証してください",
+    succeeded: "認証が完了しました",
+    failed: "認証に失敗しました",
+    cancelled: "認証を中止しました",
+  };
+  el.deviceAuthStatus.textContent = labels[auth.status] || "遠隔認証";
+  el.deviceAuthLink.href = auth.verificationUrl || "https://auth.openai.com/codex/device";
+  el.deviceAuthCode.textContent = auth.userCode || "コード待機中";
+  el.deviceAuthOutput.textContent = auth.output || "Codex CLIから認証コードを取得しています。";
+  el.deviceAuthCancelBtn.disabled = auth.status !== "running";
+  if (auth.status === "succeeded") updateLoginButton(true);
 }
 
 function updateRemoteRunState(status) {
@@ -686,6 +713,12 @@ function shouldHandleEvent(event) {
 async function refreshStatus(options = {}) {
   const res = await fetch(`/api/status${options.light ? "?light=1" : ""}`);
   const status = await res.json();
+  remoteConsole = Boolean(status.remoteConsole);
+  if (remoteConsole) {
+    const name = status.publicName || location.hostname;
+    document.title = `${name} - Codex Console`;
+    el.brandSubtitle.textContent = `${name} Remote Console`;
+  }
   applySettings(readSettings());
   el.codexState.textContent = status.codexInstalled ? "OK" : "未インストール";
   el.codexState.className = status.codexInstalled ? "ok" : "bad";
@@ -704,6 +737,7 @@ async function refreshStatus(options = {}) {
   updateSessionLabel();
   renderHistorySummary(status.history || []);
   updateRemoteRunState(status);
+  renderDeviceAuth(status.deviceAuth);
 }
 
 async function refreshRateLimits(force = false) {
@@ -945,8 +979,28 @@ async function stopCodex() {
 
 async function openLogin() {
   const res = await fetch("/api/login", { method: "POST" });
-  if (res.ok) appendLine("ログイン用PowerShellを開きました。ログイン後、この画面から再実行してください。");
-  else appendLine("ログイン起動に失敗しました。", "error");
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    appendLine(body.error || "ログイン起動に失敗しました。", "error");
+    return;
+  }
+  if (body.mode === "device") {
+    remoteConsole = true;
+    renderDeviceAuth(body.deviceAuth);
+    appendLine("遠隔認証を開始しました。表示された認証ページとワンタイムコードを使用してください。", "system");
+    return;
+  }
+  appendLine("ログイン用PowerShellを開きました。ログイン後、この画面から再実行してください。");
+}
+
+async function cancelDeviceAuth() {
+  const res = await fetch("/api/auth/device/stop", { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    appendLine(body.error || "遠隔認証を停止できませんでした。", "error");
+    return;
+  }
+  renderDeviceAuth(body.deviceAuth);
 }
 
 async function logoutCodex() {
@@ -1025,6 +1079,7 @@ el.openUploadsBtn.addEventListener("click", () => openFolder("uploads"));
 el.analyticsBtn.addEventListener("click", () => openUrl("analytics"));
 el.historyBtn.addEventListener("click", () => window.open("/api/history.txt", "_blank", "noopener,noreferrer"));
 el.loginBtn.addEventListener("click", handleLoginButton);
+el.deviceAuthCancelBtn.addEventListener("click", cancelDeviceAuth);
 el.runBtn.addEventListener("click", runCodex);
 el.newSessionBtn.addEventListener("click", newSession);
 el.stopBtn.addEventListener("click", stopCodex);

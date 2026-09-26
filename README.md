@@ -20,6 +20,7 @@ PowerShell の実行ポリシーは BAT 側でプロセス単位に回避する�
 | `start-admin.bat` | 管理者権限が必要な Windows 操作用 |
 | `start-lan.bat` | 同じ LAN の別端末から共有 |
 | `start-lan-admin.bat` | LAN 共有と管理者権限を併用 |
+| `start-remote.bat` | `misao.local` 用の常設リモートコンソール |
 | `Login-Codex.bat` | ログインだけを実行 |
 | `clean.bat` | ローカル状態のクリーンアップ |
 
@@ -58,6 +59,26 @@ GUI の既定 URL は `http://127.0.0.1:41731` です。停止は起動したコ
 `start-lan.bat` を起動すると、コンソールに共有 URL とランダムな長いパスワードが表示されます。同じ LAN の端末から URL を開き、パスワードを入力すると GUI、履歴、成果物へアクセスできます。
 
 LAN 共有は暗号化されない HTTP です。家庭内・社内など信頼できるネットワークだけで使い、インターネットへ直接ポート公開しないでください。パスワードを知る人は Codex の実行やファイル閲覧ができます。遠隔利用には VPN や認証付き HTTPS リバースプロキシを別途使用してください。
+
+## misao.local リモートコンソール
+
+遠隔端末として常設する場合は `start-remote.bat` を起動します。初回に強い管理パスワードを生成し、次の URL と一緒にコンソールへ表示します。
+
+```text
+http://misao.local:41731
+```
+
+設定は `data/remote-console.json` に保存され、再起動後も同じ URL とパスワードを使用します。パスワードを作り直す場合は次を実行します。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-CodexRemote.ps1 -ResetPassword
+```
+
+`misao.local` が名前解決できない端末では、起動画面に表示される LAN IP を使って `http://<LAN-IP>:41731` を開いてください。Windows のコンピューター名を `misao` にし、ネットワークで mDNS が利用可能なら `misao.local` でアクセスできます。
+
+未ログインまたはトークン失効時に「ログイン」を押すと、遠隔画面へ ChatGPT のデバイス認証 URL とワンタイムコードを表示します。認証後は同じ画面から対話でき、「ログアウト」で保存済み認証を解除できます。認証ファイルそのものをブラウザへ送信することはありません。
+
+このモードも HTTP のため、信頼できる LAN または VPN 内だけで使用してください。インターネットへ直接公開しないでください。
 
 ## ローカル Agent API
 

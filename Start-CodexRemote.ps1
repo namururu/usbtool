@@ -1,0 +1,71 @@
+param(
+    [int]$Port = 41731,
+    [string]$PublicName = "misao.local",
+    [string]$Password = "",
+    [switch]$ResetPassword
+)
+
+$ErrorActionPreference = "Stop"
+
+$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$DataDir = Join-Path $Root "data"
+$ConfigFile = Join-Path $DataDir "remote-console.json"
+
+function New-RemotePassword {
+    $bytes = New-Object byte[] 18
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    return ([Convert]::ToHexString($bytes)).ToLowerInvariant()
+}
+
+if ($PublicName -notmatch '^[A-Za-z0-9.-]+$') {
+    throw "PublicName contains unsupported characters: $PublicName"
+}
+
+New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
+$saved = $null
+if (Test-Path $ConfigFile) {
+    try {
+        $saved = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+    }
+    catch {
+        Write-Warning "remote-console.json was invalid and will be recreated."
+    }
+}
+
+if (-not $Password -and -not $ResetPassword) {
+    $Password = [string]$saved.password
+}
+if (-not $Password) {
+    $Password = New-RemotePassword
+}
+if (-not $PSBoundParameters.ContainsKey("PublicName") -and $saved.publicName) {
+    $PublicName = [string]$saved.publicName
+}
+if (-not $PSBoundParameters.ContainsKey("Port") -and $saved.port) {
+    $Port = [int]$saved.port
+}
+
+[ordered]@{
+    publicName = $PublicName
+    port = $Port
+    password = $Password
+    updatedAt = (Get-Date).ToString("o")
+} | ConvertTo-Json | Set-Content -Path $ConfigFile -Encoding UTF8
+
+$url = "http://$PublicName`:$Port"
+Write-Host ""
+Write-Host "Remote Codex Console"
+Write-Host "URL=$url"
+Write-Host "Password=$Password"
+Write-Host "Fallback=http://<this-PC-LAN-IP>:$Port"
+Write-Host ""
+Write-Host "Keep this password private. Remote users can operate Codex on this PC."
+Write-Host ""
+
+& (Join-Path $Root "Start-CodexGui.ps1") `
+    -Port $Port `
+    -NoBrowser `
+    -Lan `
+    -LanPassword $Password `
+    -RemoteConsole `
+    -PublicName $PublicName

@@ -16,7 +16,7 @@
             <h1>Portable Codex</h1>
             <select id="activeModel" aria-label="モデル切り替え"></select>
           </div>
-          <p>USB Cockpit</p>
+          <p id="brandSubtitle">USB Cockpit</p>
         </div>
       </div>
       <div class="top-status">
@@ -138,6 +138,17 @@
     </section>
 
     <section class="composer">
+      <div id="deviceAuthPanel" class="device-auth" hidden>
+        <div class="device-auth-head">
+          <strong id="deviceAuthStatus">遠隔認証</strong>
+          <button id="deviceAuthCancelBtn" type="button">認証を中止</button>
+        </div>
+        <div class="device-auth-body">
+          <a id="deviceAuthLink" href="https://auth.openai.com/codex/device" target="_blank" rel="noopener noreferrer">認証ページを開く</a>
+          <code id="deviceAuthCode">コード待機中</code>
+        </div>
+        <pre id="deviceAuthOutput"></pre>
+      </div>
       <div id="attachments" class="attachments"></div>
       <textarea id="prompt" rows="4" placeholder="依頼を書く。画像やファイルはドラッグ&ドロップ、貼り付け、または添付ボタンから追加できます。"></textarea>
       <div class="actions">

@@ -7,6 +7,7 @@ Set-CodexStatusLine.ps1
 Start-Codex.ps1
 Start-CodexGui.ps1
 Start-CodexGuiAdmin.ps1
+Start-CodexRemote.ps1
 Stop-CodexGui.ps1
 Update-Codex.ps1
 Update-Self.ps1
@@ -18,6 +19,7 @@ start.bat
 start-admin.bat
 start-lan.bat
 start-lan-admin.bat
+start-remote.bat
 clean.bat
 update.json
 gui/**

@@ -3,7 +3,9 @@ param(
     [switch]$NoBrowser,
     [switch]$Lan,
     [string]$LanPassword = "",
-    [string]$LanToken = ""
+    [string]$LanToken = "",
+    [switch]$RemoteConsole,
+    [string]$PublicName = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -149,5 +151,11 @@ if (-not $NoBrowser) {
 $serverArgs = @($GuiServer, "--port", $Port, "--host", $BindHost)
 if ($Lan) {
     $serverArgs += @("--lan-token", $LanPassword)
+}
+if ($RemoteConsole) {
+    $serverArgs += "--remote-console"
+}
+if ($PublicName) {
+    $serverArgs += @("--public-name", $PublicName)
 }
 & (Join-Path $NodeDir "node.exe") @serverArgs
