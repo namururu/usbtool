@@ -15,7 +15,7 @@ function Write-Info {
     }
 }
 
-$connections = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+$connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if (-not $connections) {
     Write-Info "Portable Codex GUI is not listening on port $Port."
     exit 0

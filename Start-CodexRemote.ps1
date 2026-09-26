@@ -2,7 +2,9 @@ param(
     [int]$Port = 41731,
     [string]$PublicName = "misao.local",
     [string]$Password = "",
-    [switch]$ResetPassword
+    [switch]$ResetPassword,
+    [switch]$Background,
+    [switch]$Child
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,6 +63,48 @@ Write-Host "Fallback=http://<this-PC-LAN-IP>:$Port"
 Write-Host ""
 Write-Host "Keep this password private. Remote users can operate Codex on this PC."
 Write-Host ""
+
+if ($Background -and -not $Child) {
+    $stdoutLog = Join-Path $DataDir "remote-console.log"
+    $stderrLog = Join-Path $DataDir "remote-console.err.log"
+    foreach ($log in @($stdoutLog, $stderrLog)) {
+        if (Test-Path $log) {
+            Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Child"
+    Start-Process -FilePath "powershell.exe" `
+        -ArgumentList $arguments `
+        -WorkingDirectory $Root `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $stdoutLog `
+        -RedirectStandardError $stderrLog | Out-Null
+
+    $ready = $false
+    for ($attempt = 0; $attempt -lt 50; $attempt++) {
+        Start-Sleep -Milliseconds 200
+        try {
+            $client = [System.Net.Sockets.TcpClient]::new()
+            $connected = $client.ConnectAsync("127.0.0.1", $Port).Wait(200)
+            $client.Close()
+            if ($connected) {
+                $ready = $true
+                break
+            }
+        }
+        catch {}
+    }
+
+    if (-not $ready) {
+        $errorText = if (Test-Path $stderrLog) { (Get-Content $stderrLog -Raw).Trim() } else { "" }
+        throw "Remote console did not start. $errorText"
+    }
+
+    Write-Host "Remote console is running in the background."
+    Write-Host "You can close this window."
+    exit 0
+}
 
 & (Join-Path $Root "Start-CodexGui.ps1") `
     -Port $Port `

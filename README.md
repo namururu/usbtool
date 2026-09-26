@@ -68,7 +68,9 @@ LAN 共有は暗号化されない HTTP です。家庭内・社内など信頼�
 http://misao.local:41731
 ```
 
-設定は `data/remote-console.json` に保存され、再起動後も同じ URL とパスワードを使用します。パスワードを作り直す場合は次を実行します。
+設定は `data/remote-console.json` に保存され、再起動後も同じ URL とパスワードを使用します。起動後はバックグラウンドで動くため、`Remote console is running in the background.` と表示されたら黒い画面を閉じて構いません。稼働ログは `data/remote-console.log`、エラーは `data/remote-console.err.log` に保存されます。PCを再起動した場合は `start-remote.bat` をもう一度実行してください。
+
+パスワードを作り直す場合は次を実行します。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-CodexRemote.ps1 -ResetPassword
